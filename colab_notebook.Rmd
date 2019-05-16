@@ -1,0 +1,569 @@
+# Setup The Environment
+
+## Load The Packages
+
+```{r}
+library(readstata13)
+library(tidyverse)
+library(ggplot2)
+library(caret)
+library(randomForest)
+library(lfe)
+library(grf)
+```
+
+# Data Preparation And Exploration
+
+## Load The Datasets
+
+```{r}
+endlines <- read.dta13("data/2013-0533_data_endlines1and2.dta",
+                       generate.factors = T)
+```
+
+## The Structure And Summary
+
+```{r}
+str(endlines)
+```
+
+```{r}
+colnames(endlines)
+```
+
+## Convert Factors to Binary Variable
+
+```{r}
+for (covar in colnames(endlines)) {
+  if (is.factor(endlines[, covar]) == TRUE) {
+    endlines[, covar] <- as.numeric(endlines[, covar]) - 1
+  }
+}
+```
+
+## Split Endline1 And Endline2
+
+```{r}
+comm_vars <- colnames(endlines)[1:16]
+end1_vars <- colnames(endlines)[str_detect(colnames(endlines), regex("._1$"))]
+end2_vars <- colnames(endlines)[str_detect(colnames(endlines), regex("._2$"))]
+
+endline1 <- endlines %>%
+  filter(sample1 == 1) %>%
+  select(colnames(endlines)[1:16], contains("_1"))
+```
+
+## The First Endline Survey
+
+```{r}
+str(endline1)
+```
+
+# Design Of The Study
+
+We want to study the effect of "availibility of microcredit" on different aspects of the households in Hyderabad, India: 
+
+- Business
+- ...
+
+However, the fact that in the original study, they didn't collect the baseline data in a very rigorous way and they were not confident enough that the baseline data is representative of the slum of whole.  Hence the baseline data was only as a basis for stratification, the descriptive analysis, and to collect **area-level characteristics** that are used as control variables.
+
+Because of the flaw of our datasets, we lose the ability to directly link baseline data with endlines data, hence could not perform the analysis on household-level. To mitigate this issue, we use the "index variables", which were calculated by the authors and were included in our dataset, as our target variables. And we assumed that those variables already include the information we need to analyze the causal effect.
+
+### How They Calculate The Results in The Original Paper
+
+For each "target" variable, they run an weighted OLS:
+
+$y_{ia} = \alpha + \beta * Treatment_a + X'\gamma + \epsilon_{ia}$
+
+```{r}
+spandana_amt <- felm(spandana_amt_1 ~ 1 + treatment + area_pop_base + 
+                     area_business_total_base + area_exp_pc_mean_base + 
+                     area_literate_head_base + area_literate_base + 
+                     area_debt_total_base, 
+                     data = endline1,
+                     weights = endline1$w1)
+
+summary(spandana_amt)
+```
+
+```{r}
+endline1 %>%
+  filter(treatment == "Control") %>%
+  summarize(mean = mean(spandana_amt_1, na.rm = TRUE))
+```
+
+### Treatment & Target Variable
+
+- Treatment Variable:  `treatment`
+- Target Variable: `biz_index_all_1`
+
+We want to find out whether there are heterogeneous effects of  "availibility of Spandana microcredit loan" on business in the area.
+
+```{r}
+endline1 %>%
+  filter(is.na(treatment) == FALSE) %>% # exclude the observations with NA
+  group_by(treatment) %>%
+  summarize("Num. of Obs." = n(),
+            "Ave. Biz. Index" = mean(biz_index_all_1, na.rm = TRUE))
+```
+
+# Sorted Group Treatment Effects (GATES) with Business Index
+
+## Step 00: Setup Environment
+
+Setup the following variables:
+
+- Number of Simulations: 1 (for now)
+- Number of Groups: 5 (for now)
+- Treatment: `treatment`
+- Treatment Assignment: randomized assignment
+- Target Variable: `biz_index_all_1`
+
+```{r}
+set.seed(12345)
+sim <- 100
+groups <- 5
+target_index <- "biz_index_all_1"
+```
+
+Exclude irrelevent variables from the dataset.
+
+```{r}
+dataset <- endline1 %>%
+  filter(any_biz_1 == 1) %>%
+  select(everything(),
+         -any_biz_1,
+         -w, -w2, -sample1, -sample2, -contains("visit"), # irrelevent
+         -contains("index"),                              # prevent confounding
+         target_index)                                    # add target index
+str(dataset)
+```
+
+### Missing Values
+
+The dataset contains huge amount of missing values and there are only 27 observations who has complete data for all covariates.
+
+```{r}
+nrow(dataset[complete.cases(dataset),])
+```
+
+Here is the list of covariates that contain at least one missing value.
+
+```{r}
+for (covar in colnames(dataset)) {
+  if (anyNA(dataset[, covar]) == TRUE) {
+    print(covar)
+    str(dataset[, covar])
+    print(summary(dataset[, covar]))
+  }
+}
+```
+
+#### Filling With Median Value
+
+```{r}
+for (covar in colnames(dataset)) {
+  if (is.numeric(dataset[, covar]) == TRUE) {
+    dataset[is.na(dataset[, covar]), covar] <- median(dataset[, covar], 
+                                                      na.rm = TRUE)
+  }
+}
+```
+
+```{r}
+nrow(dataset[complete.cases(dataset),])
+anyNA(dataset)
+```
+
+## Step 01: Split the data into Auxiliary and Main samples
+
+```{r}
+auxi_ind <- createDataPartition(dataset$treatment, p = 0.7, list = FALSE)
+auxi <- dataset[auxi_ind, ]
+main <- dataset[-auxi_ind,]
+```
+
+```{r}
+str(auxi)
+```
+
+## Step 02: Train Two Models
+
+In this section we use auxiliary sample to train two models:
+- $Y_i=\hat{g_0}(X_i,D_i=0)+\hat{U_i}$
+- $Y_i=\hat{g_0}(X_i,D_i=1)+\hat{U_i}$
+
+```{r}
+# seperate treatment & control in the auxiliary sample
+auxi_treat_ind <- which(auxi$treatment == 1)
+auxi_treat <- auxi[auxi_treat_ind, ]
+auxi_contr <- auxi[-auxi_treat_ind,]
+```
+
+```{r}
+auxi_yi0 <- randomForest(biz_index_all_1 ~ . - hhid - areaid - w1,
+                         data = auxi_contr,
+                         ntree = 3000, 
+                         mtry = 3, 
+                         replace = TRUE,
+                         type = "regression")
+auxi_yi1 <- randomForest(biz_index_all_1 ~ . - hhid - areaid - w1,
+                         data = auxi_treat,
+                         ntree = 3000,
+                         mtry = 3,
+                         replace = TRUE,
+                         type = "regression")
+```
+
+## Step 03: Train The Propensity Score Model
+
+Because we assumed the treatment was assigned randomly, the propensity score would be constant for all observations.
+
+We use the auxiliary sample to train a model for propensity score.
+- $D_i=\hat{m_0}(X_i)+\hat{V_i}$
+
+```{r}
+prop_score <- nrow(dataset[dataset$treatment == 1, ])/nrow(dataset)
+```
+
+```{r}
+auxi_d <- randomForest(treatment ~ . -biz_index_all_1 -hhid -w1,
+                       data = auxi,
+                       ntree = 1000, 
+                       mtry = 3, 
+                       replace = TRUE,
+                       type = "regression")
+prop_score <- predict(auxi_d, newdata = main)
+```
+
+## Step 04: Estimate Conditional Baseline And Treatment Function
+
+We predict the conditonal baseline and conditional treatment effect for each observation in main sample using the models we train in Step02.
+
+```{r}
+main_yi0 <- predict(auxi_yi0, newdata = main)
+main_yi1 <- predict(auxi_yi1, newdata = main)
+main$baseline <- main_yi0
+main$condi_treat <- (main_yi1 - main_yi0)
+```
+
+## Step 05: Divide Observations Into Groups
+
+```{r}
+breaks <- quantile(main$condi_treat, seq(0,1, 1/groups), include.lowest = TRUE)
+breaks[1] <- breaks[1] - 0.001
+breaks[6] <- breaks[6] + 0.001
+main$treat_group <- cut(main$condi_treat, breaks = breaks)
+```
+
+## Step 06: Estimate The Propensity Score
+
+```{r}
+main$prop_score <- prop_score
+```
+
+## Step 07: Calculate Propensity Score Offset
+
+Prepare to perform the weighted OLS.
+$\sum_{k}\gamma_k*(D-p(X))*1(G_k)+v$
+
+First we calculate the propensity score offset $D-p(X)$. Then multiply with $1(G_k)$ to construct a dataframe that will later be used in the OLS formula.
+
+```{r}
+# calculate the propensity score offset for each observation in main sample
+main$prop_offset <- main$treatment - main$prop_score
+summary(main$prop_offset)
+```
+
+```{r}
+# construct matrix from each observation's group factor
+SGX <- model.matrix(~-1+main$treat_group)
+# construct D-p(X)*1(G_k) for each observation
+DSG <- data.frame(main$prop_offset*SGX)
+colnames(DSG) <- c("G1", "G2", "G3", "G4", "G5")
+head(DSG)
+```
+
+## Step 08: Run Weighted OLS
+
+$Y=\alpha'X_1\sum_{g}\gamma_g*(D-p(X))*1(G_g)+v$
+
+```{r}
+main[,c("G1", "G2", "G3", "G4", "G5")] <- cbind(
+  DSG$G1, DSG$G2, DSG$G3, DSG$G4, DSG$G5)
+```
+
+### Without Clustering
+
+```{r}
+gates <- felm(biz_index_all_1~-1+baseline+condi_treat+G1+G2+G3+G4+G5|0|0|0,
+              data = maine)
+summary(gates)
+```
+
+### With Clustering
+
+```{r}
+gates_cl<- felm(biz_index_all_1~baseline+condi_treat+G1+G2+G3+G4+G5|0|0|areaid,
+                data = main,
+                weights = main$w1)
+summary(gates_cl)
+```
+
+```{r}
+main %>% 
+  mutate(groups = case_when(
+      G1 != 0 ~ "G1",
+      G2 != 0 ~ "G2",
+      G3 != 0 ~ "G3",
+      G4 != 0 ~ "G4",
+      G5 != 0 ~ "G5",
+      TRUE ~ "unknown")) %>%
+  group_by(groups) %>%
+  summarize(bis_expense = mean(bizexpense_1),
+            informal_amt = mean(informal_amt_1),
+            spandana_amt = mean(spandana_amt_1),
+            bis_profit = mean(bizprofit_1))
+```
+
+## Simulation
+
+```{r}
+gates_results <- list()
+gates_cluster_results <- list()
+
+for (i in 1:sim) {
+  seed <- i + floor(runif(1, min = 0, max = 10000))
+  set.seed(seed)
+
+  auxi_ind <- createDataPartition(dataset$treatment, p = 0.7, list = FALSE)
+  auxi <- dataset[auxi_ind, ]
+  main <- dataset[-auxi_ind,]
+
+  # seperate treatment & control in the auxiliary sample
+  auxi_treat_ind <- which(auxi$treatment == 1)
+  auxi_treat <- auxi[auxi_treat_ind, ]
+  auxi_contr <- auxi[-auxi_treat_ind,]
+
+  auxi_yi0 <- randomForest(biz_index_all_1 ~ . - hhid - areaid - w1,
+                           data = auxi_contr,
+                           ntree = 1000,
+                           mtry = 3,
+                           replace = TRUE,
+                           type = "regression")
+  auxi_yi1 <- randomForest(biz_index_all_1 ~ . - hhid - areaid - w1,
+                           data = auxi_treat,
+                           ntree = 1000,
+                           mtry = 3,
+                           replace = TRUE,
+                           type = "regression")
+
+  # prop_score <- nrow(dataset[dataset$treatment == 1, ])/nrow(dataset)
+
+  auxi_d <- randomForest(treatment ~ . -biz_index_all_1 -hhid -w1,
+                         data = auxi,
+                         ntree = 1000,
+                         mtry = 3,
+                         replace = TRUE,
+                         type = "regression")
+  prop_score <- predict(auxi_d, newdata = main)
+
+  main_yi0 <- predict(auxi_yi0, newdata = main)
+  main_yi1 <- predict(auxi_yi1, newdata = main)
+  main$baseline <- main_yi0
+  main$condi_treat <- (main_yi1 - main_yi0)
+
+  breaks <- quantile(main$condi_treat, seq(0,1, 1/groups), include.lowest = TRUE)
+  breaks[1] <- breaks[1] - 0.001
+  breaks[6] <- breaks[6] + 0.001
+  main$treat_group <- cut(main$condi_treat, breaks = breaks)
+
+  main$prop_score <- prop_score
+
+  # calculate the propensity score offset for each observation in main sample
+  main$prop_offset <- main$treatment - main$prop_score
+
+  # construct matrix from each observation's group factor
+  SGX <- model.matrix(~-1+main$treat_group)
+  # construct D-p(X)*1(G_k) for each observation
+  DSG <- data.frame(main$prop_offset*SGX)
+  colnames(DSG) <- c("G1", "G2", "G3", "G4", "G5")
+
+  main[,c("G1", "G2", "G3", "G4", "G5")] <- cbind(
+    DSG$G1, DSG$G2, DSG$G3, DSG$G4, DSG$G5)
+
+  gates <- felm(biz_index_all_1~baseline+condi_treat+G1+G2+G3+G4+G5|0|0|0,
+                data = main,
+                weights = main$w1)
+
+  gates_cl <- felm(biz_index_all_1~baseline+condi_treat+G1+G2+G3+G4+G5|0|0|areaid,
+                   data = main,
+                   weights = main$w1)
+
+  gates_results[[i]] <- gates
+  gates_cluster_results[[i]] <- gates_cl
+}
+```
+
+```{r}
+gates_summary <- data.frame(matrix(nrow = 2, ncol = 7))
+coefs <- c("baseline", "condi_treat", "G1", "G2", "G3", "G4", "G5")
+colnames(gates_summary) <- coefs
+
+for (coef in coefs) {
+  gates_summary[1, coef] <- median(sapply(gates_results, 
+                                          function(x) x$coefficients[coef, ]))
+  gates_summary[2, coef] <- mean(sapply(gates_cluster_results,
+                                          function(x) x$coefficients[coef, ]))
+}
+```
+
+```{r}
+gates_summary[1, ] # median
+```
+
+```{r}
+gates_summary[2, ] # mean
+```
+
+# CAUSAL FOREST WITH BUSINESS INDEX
+
+## Preparing The Data Set
+
+```{r}
+# Compare the business indexes:
+# There are so many NAs in biz_index_new and biz_index_old data
+head(cbind(endline1$biz_index_all_1, endline1$biz_index_new_1, endline1$biz_index_old_1))
+```
+
+```{r}
+# Checking all the NAs at the endline1 data:
+sapply(endline1, function(x) sum(is.na(x)))
+```
+
+## Deleting NAs
+
+```{r}
+endline1_naomit <- endline1
+endline1_naomit$girl515_workhrs_pc_1 <- NULL
+endline1_naomit$boy515_workhrs_pc_1 <- NULL
+endline1_naomit$girl1620_school_1 <- NULL
+endline1_naomit$boy1620_school_1 <- NULL
+endline1_naomit$girl515_school_1 <- NULL
+endline1_naomit$boy515_school_1 <- NULL
+endline1_naomit$female_biz_pct_1 <- NULL
+endline1_naomit$hours_child1620_week_1 <- NULL
+endline1_naomit$hours_girl1620_week_1 <- NULL
+endline1_naomit$hours_boy1620_week_1 <- NULL
+
+# I'm not sure if we should delete the ones above:
+
+endline1_naomit$educ_exp_mo_1 <- NULL
+endline1_naomit$educ_exp_mo_pc_1 <- NULL
+endline1_naomit$biz_stop_1 <- NULL
+
+# biz_index_new and biz_index_old have so many NAs. 
+# Therefore, i only used biz_index_all_1
+
+endline1_naomit$biz_index_new_1 <- NULL
+endline1_naomit$biz_index_old_1 <- NULL
+
+sapply(endline1_naomit, function(x) sum(is.na(x)))
+
+```
+
+## Model with Other Indexes
+
+```{r}
+y <- endline1_naomit$biz_index_all_1
+X <- endline1_naomit[ , -which(names(endline1_naomit) %in% 
+                                 c("biz_index_all_1", "treatment", 
+                                   "w", "w1", "w2", "sample1", "sample2"))]
+W <- endline1$treatment
+
+end1 <- cbind(y, W, X)
+end1$W <- as.numeric(end1$W)-1
+matrix_1 <- na.omit(end1)
+
+set.seed(123)
+forest <- causal_forest(
+  model.matrix(~., data = matrix_1[, 3:ncol(matrix_1)]),
+  matrix_1$y,
+  matrix_1$W,
+  mtry = 1, num.trees = 1000)
+forest
+```
+
+## Variable Importance with Other Indexes
+
+```{r}
+var_imp_plot <- function(forest, decay.exponent = 2L, max.depth = 4L) {
+  
+  # Calculate variable importance of all features
+  # (from print.R)
+  split.freq <- split_frequencies(forest, max.depth)
+  split.freq <- split.freq / pmax(1L, rowSums(split.freq))
+  weight <- seq_len(nrow(split.freq)) ^ -decay.exponent
+  var.importance <- t(split.freq) %*% weight / sum(weight)
+  
+  # Format data frame
+  p <- ncol(forest$X.orig)
+  
+  var.names <- colnames(forest$X.orig)[seq_len(p)]
+  if (is.null(var.names)) {
+    var.names <- paste0('x', seq_len(p))
+  }
+  df <- tibble(Variable = var.names,
+               Importance = as.numeric(var.importance)) %>%
+    arrange(Importance) %>% 
+    mutate(Variable = factor(Variable, levels = unique(Variable)))
+  
+  # Plot results
+  p <- ggplot(df, aes(Variable, Importance)) + 
+    geom_bar(stat = 'identity') + 
+    coord_flip() + 
+    ggtitle('Variable Importance') + 
+    theme_bw() + 
+    theme(plot.title = element_text(hjust = 0.5))
+  print(p)
+}
+var_imp_plot(forest)
+```
+
+```{r}
+split_frequencies(forest, max.depth = 4)
+```
+
+```{r}
+plot(get_tree(forest, 1))
+```
+
+## Model with Clustering
+
+```{r}
+y <- endline1_naomit$biz_index_all_1
+X <- endline1_naomit[ , -which(names(endline1_naomit) %in% 
+                                 c("biz_index_all_1", "treatment", 
+                                   "w", "w1", "w2", "sample1", "sample2","areaid"))]
+W <- endline1$treatment
+
+end1 <- cbind(y, W, X)
+end1$W <- as.numeric(end1$W)-1
+matrix_1 <- na.omit(end1)
+
+set.seed(123)
+forest_cluster <- causal_forest(
+  model.matrix(~., data = matrix_1[, 3:ncol(matrix_1)]),
+  matrix_1$y,
+  matrix_1$W,
+  mtry = 1, num.trees = 1000,
+  clusters = matrix_1$areaid)
+forest_cluster
+```
+
+## Variable Importance with Clustering (with Indexes)
+
+```{r}
+var_imp_plot(forest_cluster)
+```

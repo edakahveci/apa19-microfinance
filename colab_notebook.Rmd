@@ -545,7 +545,7 @@ split_frequencies(forest, max.depth = 4)
 plot(get_tree(forest, 1))
 ```
 
-## Model with Clustering
+## Model with Clustering with Other Indexes
 
 ```{r}
 y <- endline1_naomit$biz_index_all_1
@@ -572,4 +572,78 @@ forest_cluster
 
 ```{r}
 var_imp_plot(forest_cluster)
+```
+
+## Model without Indexes
+
+```{r}
+y <- endline1_naomit$biz_index_all_1
+X <- endline1_naomit[ , -which(names(endline1_naomit) %in% 
+                                 c("biz_index_all_1", "treatment", 
+                                   "w", "w1", "w2", "sample1", "sample2",
+                                   "consumption_index_1", "social_index_1", "labor_index_1",
+                                   "income_index_1", "credit_index_1", "women_emp_index_1",
+                                   "home_durable_index_1"))]
+W <- endline1$treatment
+
+end1 <- cbind(y, W, X)
+end1$W <- as.numeric(end1$W)-1
+matrix_1 <- na.omit(end1)
+
+set.seed(123)
+forest_without <- causal_forest(
+  model.matrix(~., data = matrix_1[, 3:ncol(matrix_1)]),
+  matrix_1$y,
+  matrix_1$W,
+  mtry = 1, num.trees = 1000)
+forest_without
+```
+
+## Variable Importance without Indexes
+
+```{r}
+var_imp_plot(forest_without)
+```
+
+```{r}
+split_frequencies(forest_without, max.depth = 4)
+```
+
+```{r}
+colnames(X[43])
+colnames(X[61])
+```
+## Model without Indexes with Clustering
+
+```{r}
+y <- endline1_naomit$biz_index_all_1
+X <- endline1_naomit[ , -which(names(endline1_naomit) %in% 
+                                 c("biz_index_all_1", "treatment", 
+                                   "w", "w1", "w2", "sample1", "sample2","areaid",
+                                   "consumption_index_1", "social_index_1", "labor_index_1",
+                                   "income_index_1", "credit_index_1", "women_emp_index_1",
+                                   "home_durable_index_1"))]
+W <- endline1$treatment
+
+end1 <- cbind(y, W, X)
+end1$W <- as.numeric(end1$W)-1
+matrix_1 <- na.omit(end1)
+
+set.seed(123)
+forest_without_cluster <- causal_forest(
+  model.matrix(~., data = matrix_1[, 3:ncol(matrix_1)]),
+  matrix_1$y,
+  matrix_1$W,
+  mtry = 1, num.trees = 1000,
+  clusters = matrix_1$areaid)
+forest_without_cluster
+```
+
+## Variable Importance without Indexes with Clustering
+
+```{r}
+var_imp_plot(forest_without_cluster)
+```
+```{r}
+split_frequencies(forest_without_cluster, max.depth = 4)
 ```

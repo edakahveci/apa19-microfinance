@@ -10,6 +10,12 @@ library(caret)
 library(randomForest)
 library(lfe)
 library(grf)
+
+# Install packages "causalLearning" from source
+# We will use the causalBoosting and causalMARS in this package
+install.packages("packages/causalLearning_1.0.0.tar.gz", repo=NULL, type="source")
+# Load the package
+library(causalLearning)
 ```
 
 # Data Preparation And Exploration

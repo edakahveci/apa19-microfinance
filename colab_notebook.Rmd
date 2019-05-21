@@ -56,13 +56,63 @@ end2_vars <- colnames(endlines)[str_detect(colnames(endlines), regex("._2$"))]
 
 endline1 <- endlines %>%
   filter(sample1 == 1) %>%
-  select(colnames(endlines)[1:16], contains("_1"))
+  select(colnames(endlines)[1:16], contains("_1"),
+         -c("w", "w1", "w2", "sample1", "sample2",
+            visitday_1, visitmonth_1, visityear_1))
 ```
+
+```{r}
+str(endline1)
+```
+
+
+## Missing Values
+
+```{r}
+endline1$girl515_workhrs_pc_1 <- NULL
+endline1$boy515_workhrs_pc_1 <- NULL
+endline1$girl1620_school_1 <- NULL
+endline1$boy1620_school_1 <- NULL
+endline1$girl515_school_1 <- NULL
+endline1$boy515_school_1 <- NULL
+endline1$female_biz_pct_1 <- NULL
+endline1$hours_child1620_week_1 <- NULL
+endline1$hours_girl1620_week_1 <- NULL
+endline1$hours_boy1620_week_1 <- NULL
+endline1$biz_stop_1 <- NULL
+endline1$biz_index_new_1 <- NULL
+endline1$biz_index_old_1 <- NULL
+```
+
+## Merge the Date
+
+```{r}
+endline1$visitdate <- as.Date(with(endline1, paste(visityear_1, visitmonth_1, visitday_1,sep="-")), "%Y-%m-%d")
+str(endline1$visitdate)
+summary(endline1$visitdate)
+```
+
+```{r}
+endline1$visitday_1 <- NULL
+endline1$visitmonth_1 <- NULL
+endline1$visityear_1 <- NULL
+endline1$visitdate <- NULL
+endline1$w1 <- NULL
+endline1$w2 <- NULL
+endilne1$
+```
+
+
+
+```{r}
+
+```
+
 
 ## The First Endline Survey
 
 ```{r}
-str(endline1)
+summary(endline1$date)
 ```
 
 # Design Of The Study
@@ -462,18 +512,19 @@ endline1_naomit$female_biz_pct_1 <- NULL
 endline1_naomit$hours_child1620_week_1 <- NULL
 endline1_naomit$hours_girl1620_week_1 <- NULL
 endline1_naomit$hours_boy1620_week_1 <- NULL
+endline1_naomit$biz_stop_1 <- NULL
+endline1_naomit$biz_index_new_1 <- NULL
+endline1_naomit$biz_index_old_1 <- NULL
 
 # I'm not sure if we should delete the ones above:
 
 endline1_naomit$educ_exp_mo_1 <- NULL
 endline1_naomit$educ_exp_mo_pc_1 <- NULL
-endline1_naomit$biz_stop_1 <- NULL
 
 # biz_index_new and biz_index_old have so many NAs. 
 # Therefore, i only used biz_index_all_1
 
-endline1_naomit$biz_index_new_1 <- NULL
-endline1_naomit$biz_index_old_1 <- NULL
+
 
 sapply(endline1_naomit, function(x) sum(is.na(x)))
 

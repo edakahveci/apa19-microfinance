@@ -50,10 +50,6 @@ for (covar in colnames(endlines)) {
 ## Split Endline1 And Endline2
 
 ```{r}
-comm_vars <- colnames(endlines)[1:16]
-end1_vars <- colnames(endlines)[str_detect(colnames(endlines), regex("._1$"))]
-end2_vars <- colnames(endlines)[str_detect(colnames(endlines), regex("._2$"))]
-
 endline1 <- endlines %>%
   filter(sample1 == 1) %>%
   select(colnames(endlines)[1:16], contains("_1"),
@@ -84,6 +80,17 @@ endline1$biz_index_new_1 <- NULL
 endline1$biz_index_old_1 <- NULL
 ```
 
+### Fill with Median
+```{r}
+for (covar in colnames(endline1)) {
+  if (is.numeric(endline1[, covar]) == TRUE) {
+    endline1[is.na(endline1[, covar]), covar] <- median(endline1[, covar], 
+                                                        na.rm = TRUE)
+  }
+}
+sapply(endline1, function(x) sum(is.na(x)))
+```
+
 ## Merge the Date
 
 ```{r}
@@ -100,19 +107,6 @@ endline1$visitdate <- NULL
 endline1$w1 <- NULL
 endline1$w2 <- NULL
 endilne1$
-```
-
-
-
-```{r}
-
-```
-
-
-## The First Endline Survey
-
-```{r}
-summary(endline1$date)
 ```
 
 # Design Of The Study

@@ -13,7 +13,9 @@ library(grf)
 
 # Install packages "causalLearning" from source
 # We will use the causalBoosting and causalMARS in this package
-install.packages("packages/causalLearning_1.0.0.tar.gz", repo=NULL, type="source")
+install.packages("ranger")
+library(ranger)
+install.packages("causalLearning_1.0.0.tar.gz", repo=NULL, type="source")
 # Load the package
 library(causalLearning)
 ```
@@ -455,7 +457,6 @@ X <- endline1_biz[ , -which(names(endline1_biz) %in%
 W <- endline1_biz$treatment
 
 end1 <- cbind(y, W, X)
-end1$W <- as.numeric(end1$W)-1
 matrix_1 <- na.omit(end1)
 
 set.seed(123)
@@ -500,8 +501,14 @@ var_imp_plot <- function(forest, decay.exponent = 2L, max.depth = 4L) {
     theme(plot.title = element_text(hjust = 0.5))
   print(p)
 }
-var_imp_plot(forest)
 ```
+
+## Variable Importance with Other Indexes
+
+```{r}
+varImpPlot(forest)
+```
+
 
 ```{r}
 split_frequencies(forest, max.depth = 4)
@@ -520,7 +527,6 @@ X <- endline1_biz[ , -which(names(endline1_biz) %in%
 W <- endline1_biz$treatment
 
 end1 <- cbind(y, W, X)
-end1$W <- as.numeric(end1$W)-1
 matrix_1 <- na.omit(end1)
 
 set.seed(123)
@@ -544,14 +550,13 @@ var_imp_plot(forest_cluster)
 ```{r}
 y <- endline1_biz$biz_index_all_1
 X <- endline1_biz[ , -which(names(endline1_biz) %in% 
-                                 c("biz_index_all_1", "treatment",
+                                 c("biz_index_all_1", "treatment", "hhid",
                                    "consumption_index_1", "social_index_1", "labor_index_1",
                                    "income_index_1", "credit_index_1", "women_emp_index_1",
                                    "home_durable_index_1"))]
 W <- endline1_biz$treatment
 
 end1 <- cbind(y, W, X)
-end1$W <- as.numeric(end1$W)-1
 matrix_1 <- na.omit(end1)
 
 set.seed(123)
@@ -582,14 +587,13 @@ colnames(X[61])
 ```{r}
 y <- endline1_biz$biz_index_all_1
 X <- endline1_biz[ , -which(names(endline1_biz) %in% 
-                                 c("biz_index_all_1", "treatment","areaid",
+                                 c("biz_index_all_1", "treatment","areaid", "hhid",
                                    "consumption_index_1", "social_index_1", "labor_index_1",
                                    "income_index_1", "credit_index_1", "women_emp_index_1",
                                    "home_durable_index_1"))]
 W <- endline1_biz$treatment
 
 end1 <- cbind(y, W, X)
-end1$W <- as.numeric(end1$W)-1
 matrix_1 <- na.omit(end1)
 
 set.seed(123)

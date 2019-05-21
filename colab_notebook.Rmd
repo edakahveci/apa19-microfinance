@@ -53,8 +53,7 @@ for (covar in colnames(endlines)) {
 endline1 <- endlines %>%
   filter(sample1 == 1) %>%
   select(colnames(endlines)[1:16], contains("_1"),
-         -c("w", "w1", "w2", "sample1", "sample2",
-            visitday_1, visitmonth_1, visityear_1))
+         -c("w", "w1", "w2", "sample1", "sample2"))
 ```
 
 ```{r}
@@ -106,7 +105,6 @@ endline1$visityear_1 <- NULL
 endline1$visitdate <- NULL
 endline1$w1 <- NULL
 endline1$w2 <- NULL
-endilne1$
 ```
 
 # Design Of The Study
@@ -143,7 +141,9 @@ endline1 %>%
   summarize(mean = mean(spandana_amt_1, na.rm = TRUE))
 ```
 
-### Treatment & Target Variable
+# Business Index
+
+## Treatment & Target Variable
 
 - Treatment Variable:  `treatment`
 - Target Variable: `biz_index_all_1`
@@ -158,9 +158,26 @@ endline1 %>%
             "Ave. Biz. Index" = mean(biz_index_all_1, na.rm = TRUE))
 ```
 
-# Sorted Group Treatment Effects (GATES) with Business Index
+## Dataset
 
-## Step 00: Setup Environment
+### TO DO any_biz_1?
+### TO DO exclude indexes?
+
+```{r}
+target_index <- "biz_index_all_1"
+
+endline1_biz <- endline1 %>%
+  filter(any_biz_1 == 1) %>%
+  select(everything(),
+         -any_biz_1,
+#         -contains("index"),                              # prevent confounding
+         target_index)                                    # add target index
+str(endline1_biz)
+```
+
+## Sorted Group Treatment Effects (GATES)
+
+### Step 00: Setup Environment
 
 Setup the following variables:
 
@@ -174,59 +191,9 @@ Setup the following variables:
 set.seed(12345)
 sim <- 100
 groups <- 5
-target_index <- "biz_index_all_1"
 ```
 
-Exclude irrelevent variables from the dataset.
-
-```{r}
-dataset <- endline1 %>%
-  filter(any_biz_1 == 1) %>%
-  select(everything(),
-         -any_biz_1,
-         -w, -w2, -sample1, -sample2, -contains("visit"), # irrelevent
-         -contains("index"),                              # prevent confounding
-         target_index)                                    # add target index
-str(dataset)
-```
-
-### Missing Values
-
-The dataset contains huge amount of missing values and there are only 27 observations who has complete data for all covariates.
-
-```{r}
-nrow(dataset[complete.cases(dataset),])
-```
-
-Here is the list of covariates that contain at least one missing value.
-
-```{r}
-for (covar in colnames(dataset)) {
-  if (anyNA(dataset[, covar]) == TRUE) {
-    print(covar)
-    str(dataset[, covar])
-    print(summary(dataset[, covar]))
-  }
-}
-```
-
-#### Filling With Median Value
-
-```{r}
-for (covar in colnames(dataset)) {
-  if (is.numeric(dataset[, covar]) == TRUE) {
-    dataset[is.na(dataset[, covar]), covar] <- median(dataset[, covar], 
-                                                      na.rm = TRUE)
-  }
-}
-```
-
-```{r}
-nrow(dataset[complete.cases(dataset),])
-anyNA(dataset)
-```
-
-## Step 01: Split the data into Auxiliary and Main samples
+### Step 01: Split the data into Auxiliary and Main samples
 
 ```{r}
 auxi_ind <- createDataPartition(dataset$treatment, p = 0.7, list = FALSE)
@@ -238,7 +205,7 @@ main <- dataset[-auxi_ind,]
 str(auxi)
 ```
 
-## Step 02: Train Two Models
+### Step 02: Train Two Models
 
 In this section we use auxiliary sample to train two models:
 - $Y_i=\hat{g_0}(X_i,D_i=0)+\hat{U_i}$
@@ -266,7 +233,7 @@ auxi_yi1 <- randomForest(biz_index_all_1 ~ . - hhid - areaid - w1,
                          type = "regression")
 ```
 
-## Step 03: Train The Propensity Score Model
+### Step 03: Train The Propensity Score Model
 
 Because we assumed the treatment was assigned randomly, the propensity score would be constant for all observations.
 
@@ -287,7 +254,7 @@ auxi_d <- randomForest(treatment ~ . -biz_index_all_1 -hhid -w1,
 prop_score <- predict(auxi_d, newdata = main)
 ```
 
-## Step 04: Estimate Conditional Baseline And Treatment Function
+### Step 04: Estimate Conditional Baseline And Treatment Function
 
 We predict the conditonal baseline and conditional treatment effect for each observation in main sample using the models we train in Step02.
 
@@ -298,7 +265,7 @@ main$baseline <- main_yi0
 main$condi_treat <- (main_yi1 - main_yi0)
 ```
 
-## Step 05: Divide Observations Into Groups
+### Step 05: Divide Observations Into Groups
 
 ```{r}
 breaks <- quantile(main$condi_treat, seq(0,1, 1/groups), include.lowest = TRUE)
@@ -307,13 +274,13 @@ breaks[6] <- breaks[6] + 0.001
 main$treat_group <- cut(main$condi_treat, breaks = breaks)
 ```
 
-## Step 06: Estimate The Propensity Score
+### Step 06: Estimate The Propensity Score
 
 ```{r}
 main$prop_score <- prop_score
 ```
 
-## Step 07: Calculate Propensity Score Offset
+### Step 07: Calculate Propensity Score Offset
 
 Prepare to perform the weighted OLS.
 $\sum_{k}\gamma_k*(D-p(X))*1(G_k)+v$
@@ -335,7 +302,7 @@ colnames(DSG) <- c("G1", "G2", "G3", "G4", "G5")
 head(DSG)
 ```
 
-## Step 08: Run Weighted OLS
+### Step 08: Run Weighted OLS
 
 $Y=\alpha'X_1\sum_{g}\gamma_g*(D-p(X))*1(G_g)+v$
 
@@ -477,61 +444,15 @@ gates_summary[1, ] # median
 gates_summary[2, ] # mean
 ```
 
-# CAUSAL FOREST WITH BUSINESS INDEX
+## CAUSAL FOREST WITH BUSINESS INDEX
 
-## Preparing The Data Set
-
-```{r}
-# Compare the business indexes:
-# There are so many NAs in biz_index_new and biz_index_old data
-head(cbind(endline1$biz_index_all_1, endline1$biz_index_new_1, endline1$biz_index_old_1))
-```
+### Model with Other Indexes
 
 ```{r}
-# Checking all the NAs at the endline1 data:
-sapply(endline1, function(x) sum(is.na(x)))
-```
-
-## Deleting NAs
-
-```{r}
-endline1_naomit <- endline1
-endline1_naomit$girl515_workhrs_pc_1 <- NULL
-endline1_naomit$boy515_workhrs_pc_1 <- NULL
-endline1_naomit$girl1620_school_1 <- NULL
-endline1_naomit$boy1620_school_1 <- NULL
-endline1_naomit$girl515_school_1 <- NULL
-endline1_naomit$boy515_school_1 <- NULL
-endline1_naomit$female_biz_pct_1 <- NULL
-endline1_naomit$hours_child1620_week_1 <- NULL
-endline1_naomit$hours_girl1620_week_1 <- NULL
-endline1_naomit$hours_boy1620_week_1 <- NULL
-endline1_naomit$biz_stop_1 <- NULL
-endline1_naomit$biz_index_new_1 <- NULL
-endline1_naomit$biz_index_old_1 <- NULL
-
-# I'm not sure if we should delete the ones above:
-
-endline1_naomit$educ_exp_mo_1 <- NULL
-endline1_naomit$educ_exp_mo_pc_1 <- NULL
-
-# biz_index_new and biz_index_old have so many NAs. 
-# Therefore, i only used biz_index_all_1
-
-
-
-sapply(endline1_naomit, function(x) sum(is.na(x)))
-
-```
-
-## Model with Other Indexes
-
-```{r}
-y <- endline1_naomit$biz_index_all_1
-X <- endline1_naomit[ , -which(names(endline1_naomit) %in% 
-                                 c("biz_index_all_1", "treatment", 
-                                   "w", "w1", "w2", "sample1", "sample2"))]
-W <- endline1$treatment
+y <- endline1_biz$biz_index_all_1
+X <- endline1_biz[ , -which(names(endline1_biz) %in% 
+                                 c("biz_index_all_1", "treatment"))]
+W <- endline1_biz$treatment
 
 end1 <- cbind(y, W, X)
 end1$W <- as.numeric(end1$W)-1
@@ -546,7 +467,7 @@ forest <- causal_forest(
 forest
 ```
 
-## Variable Importance with Other Indexes
+### Variable Importance with Other Indexes
 
 ```{r}
 var_imp_plot <- function(forest, decay.exponent = 2L, max.depth = 4L) {

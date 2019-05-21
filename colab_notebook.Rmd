@@ -514,11 +514,10 @@ plot(get_tree(forest, 1))
 ## Model with Clustering with Other Indexes
 
 ```{r}
-y <- endline1_naomit$biz_index_all_1
-X <- endline1_naomit[ , -which(names(endline1_naomit) %in% 
-                                 c("biz_index_all_1", "treatment", 
-                                   "w", "w1", "w2", "sample1", "sample2","areaid"))]
-W <- endline1$treatment
+y <- endline1_biz$biz_index_all_1
+X <- endline1_biz[ , -which(names(endline1_biz) %in% 
+                                 c("biz_index_all_1", "treatment","areaid"))]
+W <- endline1_biz$treatment
 
 end1 <- cbind(y, W, X)
 end1$W <- as.numeric(end1$W)-1
@@ -543,14 +542,13 @@ var_imp_plot(forest_cluster)
 ## Model without Indexes
 
 ```{r}
-y <- endline1_naomit$biz_index_all_1
-X <- endline1_naomit[ , -which(names(endline1_naomit) %in% 
-                                 c("biz_index_all_1", "treatment", 
-                                   "w", "w1", "w2", "sample1", "sample2",
+y <- endline1_biz$biz_index_all_1
+X <- endline1_biz[ , -which(names(endline1_biz) %in% 
+                                 c("biz_index_all_1", "treatment",
                                    "consumption_index_1", "social_index_1", "labor_index_1",
                                    "income_index_1", "credit_index_1", "women_emp_index_1",
                                    "home_durable_index_1"))]
-W <- endline1$treatment
+W <- endline1_biz$treatment
 
 end1 <- cbind(y, W, X)
 end1$W <- as.numeric(end1$W)-1
@@ -582,14 +580,13 @@ colnames(X[61])
 ## Model without Indexes with Clustering
 
 ```{r}
-y <- endline1_naomit$biz_index_all_1
-X <- endline1_naomit[ , -which(names(endline1_naomit) %in% 
-                                 c("biz_index_all_1", "treatment", 
-                                   "w", "w1", "w2", "sample1", "sample2","areaid",
+y <- endline1_biz$biz_index_all_1
+X <- endline1_biz[ , -which(names(endline1_biz) %in% 
+                                 c("biz_index_all_1", "treatment","areaid",
                                    "consumption_index_1", "social_index_1", "labor_index_1",
                                    "income_index_1", "credit_index_1", "women_emp_index_1",
                                    "home_durable_index_1"))]
-W <- endline1$treatment
+W <- endline1_biz$treatment
 
 end1 <- cbind(y, W, X)
 end1$W <- as.numeric(end1$W)-1

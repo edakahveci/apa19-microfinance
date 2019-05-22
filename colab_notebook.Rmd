@@ -346,84 +346,115 @@ main %>%
             bis_profit = mean(bizprofit_1))
 ```
 
-## Simulation
+### Function
 
 ```{r}
-gates_results <- list()
-gates_cluster_results <- list()
+rf_gates <- function(target, treatment, data, cluster=NULL, num.iter=100) {
+  results <- list()
+  
+  # TODO implement user specified num.groups
+  num.groups <- 5
+  
+  # if cluster is not specified, use 0 as the placeholder
+  if (is.null(cluster) == TRUE) {
+    cluster <- 0
+  }
 
-for (i in 1:sim) {
-  seed <- i + floor(runif(1, min = 0, max = 10000))
-  set.seed(seed)
+  for (i in 1:num.iter) {
+    # set seed for reproduction
+    seed <- i + floor(runif(1, min = 0, max = 10000))
+    set.seed(seed)
+  
+    # seperate auxi and main sample  
+    auxi_ind <- createDataPartition(data[,target], p = 0.7, list = FALSE)
+    auxi <- data[auxi_ind, ]
+    main <- data[-auxi_ind,]
+  
+    # seperate treatment & control in the auxiliary sample
+    auxi_treat_ind <- which(auxi[,treatment] == 1)
+    auxi_treat <- auxi[auxi_treat_ind, ]
+    auxi_contr <- auxi[-auxi_treat_ind,]
 
-  auxi_ind <- createDataPartition(dataset$treatment, p = 0.7, list = FALSE)
-  auxi <- dataset[auxi_ind, ]
-  main <- dataset[-auxi_ind,]
+    # fit a model to for auxi_treat and auxi_contr
+    auxi_formula <- as.formula(paste(target, " ~ ", "."))
+    auxi_yi0 <- randomForest(biz_index_all_1 ~ .,
+                             data = auxi_contr,
+                             ntree = 3000,
+                             mtry = 3,
+                             replace = TRUE,
+                             type = "regression")
+    auxi_yi1 <- randomForest(auxi_formula,
+                             data = auxi_treat,
+                             ntree = 3000,
+                             mtry = 3,
+                             replace = TRUE,
+                             type = "regression")
+    
+    # TODO implement option to use non-randomized treatment assignment
+    if (TRUE) {
+      # calculate propensity score (treated/all)
+      prop_score <- nrow(data[data$treatment == 1, ])/nrow(data)      
+    } else {
+      # fit a model to predict whether a observation was treated or not
+      auxi_d <- randomForest(treatment ~ . -biz_index_all_1 -hhid -w1,
+                             data = auxi,
+                             ntree = 1000,
+                             mtry = 3,
+                             replace = TRUE,
+                             type = "regression")
+      prop_score <- predict(auxi_d, newdata = main)
+    }
+    
+    # assign each observation's propensity score
+    main$prop_score <- prop_score
 
-  # seperate treatment & control in the auxiliary sample
-  auxi_treat_ind <- which(auxi$treatment == 1)
-  auxi_treat <- auxi[auxi_treat_ind, ]
-  auxi_contr <- auxi[-auxi_treat_ind,]
-
-  auxi_yi0 <- randomForest(biz_index_all_1 ~ . - hhid - areaid - w1,
-                           data = auxi_contr,
-                           ntree = 1000,
-                           mtry = 3,
-                           replace = TRUE,
-                           type = "regression")
-  auxi_yi1 <- randomForest(biz_index_all_1 ~ . - hhid - areaid - w1,
-                           data = auxi_treat,
-                           ntree = 1000,
-                           mtry = 3,
-                           replace = TRUE,
-                           type = "regression")
-
-  # prop_score <- nrow(dataset[dataset$treatment == 1, ])/nrow(dataset)
-
-  auxi_d <- randomForest(treatment ~ . -biz_index_all_1 -hhid -w1,
-                         data = auxi,
-                         ntree = 1000,
-                         mtry = 3,
-                         replace = TRUE,
-                         type = "regression")
-  prop_score <- predict(auxi_d, newdata = main)
-
-  main_yi0 <- predict(auxi_yi0, newdata = main)
-  main_yi1 <- predict(auxi_yi1, newdata = main)
-  main$baseline <- main_yi0
-  main$condi_treat <- (main_yi1 - main_yi0)
-
-  breaks <- quantile(main$condi_treat, seq(0,1, 1/groups), include.lowest = TRUE)
-  breaks[1] <- breaks[1] - 0.001
-  breaks[6] <- breaks[6] + 0.001
-  main$treat_group <- cut(main$condi_treat, breaks = breaks)
-
-  main$prop_score <- prop_score
-
-  # calculate the propensity score offset for each observation in main sample
-  main$prop_offset <- main$treatment - main$prop_score
-
-  # construct matrix from each observation's group factor
-  SGX <- model.matrix(~-1+main$treat_group)
-  # construct D-p(X)*1(G_k) for each observation
-  DSG <- data.frame(main$prop_offset*SGX)
-  colnames(DSG) <- c("G1", "G2", "G3", "G4", "G5")
-
-  main[,c("G1", "G2", "G3", "G4", "G5")] <- cbind(
-    DSG$G1, DSG$G2, DSG$G3, DSG$G4, DSG$G5)
-
-  gates <- felm(biz_index_all_1~baseline+condi_treat+G1+G2+G3+G4+G5|0|0|0,
-                data = main,
-                weights = main$w1)
-
-  gates_cl <- felm(biz_index_all_1~baseline+condi_treat+G1+G2+G3+G4+G5|0|0|areaid,
-                   data = main,
-                   weights = main$w1)
-
-  gates_results[[i]] <- gates
-  gates_cluster_results[[i]] <- gates_cl
+    # calculate the baseline effect and conditional treatment effect of main sample      
+    main_yi0 <- predict(auxi_yi0, newdata = main)
+    main_yi1 <- predict(auxi_yi1, newdata = main)
+    main$baseline <- main_yi0
+    main$condi_treat <- (main_yi1 - main_yi0)
+  
+    # divide observations based on their predicted conditional treatment effect  
+    breaks <- quantile(main$condi_treat, seq(0,1, 1/num.groups), include.lowest = TRUE)
+    breaks[1] <- breaks[1] - 0.001
+    breaks[6] <- breaks[6] + 0.001
+    main$treat_group <- cut(main$condi_treat, breaks = breaks)
+  
+    # calculate the propensity score offset for each observation in main sample
+    main$prop_offset <- main$treatment - main$prop_score
+  
+    # construct matrix from each observation's group factor
+    SGX <- model.matrix(~-1+main$treat_group)
+    # construct D-p(X)*1(G_k) and weight for each observation
+    DSG <- data.frame(main$prop_offset*SGX)
+    colnames(DSG) <- c("G1", "G2", "G3", "G4", "G5")
+    main[,c("G1", "G2", "G3", "G4", "G5", "weight")] <- cbind(
+      DSG$G1, DSG$G2, DSG$G3, DSG$G4, DSG$G5,
+      1/prop_score*(1-prop_score))
+  
+    # fit weighted ols
+    exclude_col <- c(target_index, "hhid", "areaid", "treatment", 
+                     "prop_score", "treat_group", "prop_offset", "weight")
+    data_col <- names(main)
+    gates_formula <- as.formula(paste(target, "~",
+                                      paste(data_col[!data_col %in% exclude_col], collapse = " + "),
+                                      "|0|0|",
+                                      cluster))
+    model <- felm(gates_formula,
+                  data = main,
+                  weights = main$weight)
+    
+    results[[i]] <- model
+  }
+  return(results)
 }
 ```
+
+```{r}
+gates_biz_1 <- rf_gates("biz_index_all_1", "treatment", 
+                        endline1_biz, cluster = "areaid", num.iter = 1)
+```
+
 
 ```{r}
 gates_summary <- data.frame(matrix(nrow = 2, ncol = 7))

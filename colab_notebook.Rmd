@@ -362,7 +362,7 @@ rf_gates <- function(target, treatment, data, cluster=NULL, num.iter=100) {
 
   for (i in 1:num.iter) {
     # set seed for reproduction
-    seed <- i + floor(runif(1, min = 0, max = 10000))
+    seed <- i
     set.seed(seed)
   
     # seperate auxi and main sample  

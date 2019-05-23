@@ -450,9 +450,34 @@ rf_gates <- function(target, treatment, data, cluster=NULL, num.iter=100) {
 }
 ```
 
+### Without Business-related Covariates and without Other Indexes
+
+```{r}
+gates_biz_clean <- endline1_biz %>%
+  select(everything(), -contains("biz"), -contains("index"), biz_index_all_1)
+str(gates_biz_clean)
+```
+```{r}
+gates_biz_ <- rf_gates("biz_index_all_1", "treatment", 
+                        gates_endline1_biz_without, cluster = "areaid", num.iter = 1)
+summary(gates_biz_3[[1]])
+```
+
+```{r}
+gates_biz_1_fix <- endline1_biz %>%
+  select(spouse_literate_1, spouse_works_wage_1, hhsize_adj_1,
+         women1845_1, anychild1318_1, old_biz, ownland_hyderabad_1, ownland_village_1,
+         treatment, biz_index_all_1, areaid)
+gates_biz_2 <- rf_gates("biz_index_all_1", "treatment", 
+                        gates_biz_1_fix, cluster = "areaid", num.iter = 1)
+summary(gates_biz_2[[1]])
+```
+
+
 ```{r}
 gates_biz_1 <- rf_gates("biz_index_all_1", "treatment", 
                         endline1_biz, cluster = "areaid", num.iter = 1)
+summary(gates_biz_1[[1]])
 ```
 
 

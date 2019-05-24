@@ -446,30 +446,9 @@ gates_summary[1, ] # median
 gates_summary[2, ] # mean
 ```
 
-## CAUSAL FOREST WITH BUSINESS INDEX
+# CAUSAL FOREST
 
-### Model with Other Indexes
-
-```{r}
-y <- endline1_biz$biz_index_all_1
-X <- endline1_biz[ , -which(names(endline1_biz) %in% 
-                                 c("biz_index_all_1", "treatment"))]
-W <- endline1_biz$treatment
-
-end1 <- cbind(y, W, X)
-matrix_1 <- na.omit(end1)
-
-set.seed(123)
-forest <- causal_forest(
-  model.matrix(~., data = matrix_1[, 3:ncol(matrix_1)]),
-  matrix_1$y,
-  matrix_1$W,
-  mtry = 1, num.trees = 1000)
-forest
-```
-
-### Variable Importance with Other Indexes
-
+## Var_imp_plot function
 ```{r}
 var_imp_plot <- function(forest, decay.exponent = 2L, max.depth = 4L) {
   
@@ -503,114 +482,120 @@ var_imp_plot <- function(forest, decay.exponent = 2L, max.depth = 4L) {
 }
 ```
 
-## Variable Importance with Other Indexes
-
+## Business Index
 ```{r}
-varImpPlot(forest)
-```
+target_index <- "biz_index_all_1"
 
+endline1_biz <- endline1 %>%
+  filter(any_biz_1 == 1) %>%
+  select(everything(),
+         -any_biz_1)  
+str(endline1_biz)
 
-```{r}
-split_frequencies(forest, max.depth = 4)
-```
-
-```{r}
-plot(get_tree(forest, 1))
-```
-
-## Model with Clustering with Other Indexes
-
-```{r}
 y <- endline1_biz$biz_index_all_1
-X <- endline1_biz[ , -which(names(endline1_biz) %in% 
-                                 c("biz_index_all_1", "treatment","areaid"))]
+X <- endline1_biz %>% 
+  select(
+    everything(), -treatment, -hhid,
+-contains("index"), -contains("biz"), -contains("area"), 
+-hhsize_1, -adults_1, children_1 
+)
+clusters <- endline1_biz$areaid
 W <- endline1_biz$treatment
-
-end1 <- cbind(y, W, X)
-matrix_1 <- na.omit(end1)
 
 set.seed(123)
 forest_cluster <- causal_forest(
-  model.matrix(~., data = matrix_1[, 3:ncol(matrix_1)]),
-  matrix_1$y,
-  matrix_1$W,
-  mtry = 1, num.trees = 1000,
-  clusters = matrix_1$areaid)
+  model.matrix(~., data = X),
+  y,
+  W,
+  clusters = clusters,
+  mtry = 1, num.trees = 1000)
 forest_cluster
-```
 
-## Variable Importance with Clustering (with Indexes)
-
-```{r}
 var_imp_plot(forest_cluster)
 ```
 
-## Model without Indexes
-
+## Credit Index
 ```{r}
-y <- endline1_biz$biz_index_all_1
-X <- endline1_biz[ , -which(names(endline1_biz) %in% 
-                                 c("biz_index_all_1", "treatment", "hhid",
-                                   "consumption_index_1", "social_index_1", "labor_index_1",
-                                   "income_index_1", "credit_index_1", "women_emp_index_1",
-                                   "home_durable_index_1"))]
-W <- endline1_biz$treatment
+target_index <- "credit_index_1"
 
-end1 <- cbind(y, W, X)
-matrix_1 <- na.omit(end1)
-
-set.seed(123)
-forest_without <- causal_forest(
-  model.matrix(~., data = matrix_1[, 3:ncol(matrix_1)]),
-  matrix_1$y,
-  matrix_1$W,
-  mtry = 1, num.trees = 1000)
-forest_without
-```
-
-## Variable Importance without Indexes
-
-```{r}
-var_imp_plot(forest_without)
-```
-
-```{r}
-split_frequencies(forest_without, max.depth = 4)
-```
-
-```{r}
-colnames(X[43])
-colnames(X[61])
-```
-## Model without Indexes with Clustering
-
-```{r}
-y <- endline1_biz$biz_index_all_1
-X <- endline1_biz[ , -which(names(endline1_biz) %in% 
-                                 c("biz_index_all_1", "treatment","areaid", "hhid",
-                                   "consumption_index_1", "social_index_1", "labor_index_1",
-                                   "income_index_1", "credit_index_1", "women_emp_index_1",
-                                   "home_durable_index_1"))]
-W <- endline1_biz$treatment
-
-end1 <- cbind(y, W, X)
-matrix_1 <- na.omit(end1)
+y <- endline1$credit_index_1
+X <- endline1 %>% 
+  select(
+    everything(), -treatment, -hhid, -areaid,
+-contains("index"), -contains("area"), -contains("amt"), -contains("mfi"), 
+-spandana_1, -anyloan_1, -anybank_1, -anyinformal_1, -everlate_1,
+-hhsize_1, -adults_1, -children_1 
+)
+clusters <- endline1$areaid
+W <- endline1$treatment
 
 set.seed(123)
 forest_without_cluster <- causal_forest(
-  model.matrix(~., data = matrix_1[, 3:ncol(matrix_1)]),
-  matrix_1$y,
-  matrix_1$W,
-  mtry = 1, num.trees = 1000,
-  clusters = matrix_1$areaid)
-forest_without_cluster
+  model.matrix(~., data = X),
+  y,
+  W,
+  clusters = clusters,
+  mtry = 1, num.trees = 1000)
+forest_cluster
+
+var_imp_plot(forest_cluster)
 ```
 
-## Variable Importance without Indexes with Clustering
+## Home Durable Index
+```{r}
+target_index <- "home_durable_index_1"
+
+y <- endline1$home_durable_index_1
+X <- endline1 %>% 
+  select(
+    everything(), -treatment, -hhid, -areaid,
+-contains("index"), -contains("area"), -contains("exp"), bizexpense_1, 
+-hhsize_1, -adults_1, -children_1 
+)
+clusters <- endline1$areaid
+W <- endline1$treatment
+
+str(X)
+set.seed(123)
+forest_cluster <- causal_forest(
+  model.matrix(~., data = X),
+  y,
+  W,
+  clusters = clusters,
+  mtry = 1, num.trees = 1000)
+forest_cluster
+
+var_imp_plot(forest_cluster)
+```
+
+## Consumption Index
+```{r}
+target_index <- "consumption_index_1"
+
+y <- endline1$consumption_index_1
+X <- endline1 %>% 
+  select(
+    everything(), -treatment, -hhid, -areaid,
+-contains("index"), -contains("area"), -contains("exp"), bizexpense_1, 
+-hhsize_1, -adults_1, -children_1 
+)
+clusters <- endline1$areaid
+W <- endline1$treatment
+
+str(X)
+set.seed(123)
+forest_cluster <- causal_forest(
+  model.matrix(~., data = X),
+  y,
+  W,
+  clusters = clusters,
+  mtry = 1, num.trees = 1000)
+forest_cluster
+
+var_imp_plot(forest_cluster)
+```
 
 ```{r}
-var_imp_plot(forest_without_cluster)
-```
-```{r}
-split_frequencies(forest_without_cluster, max.depth = 4)
-```
+index <- endline1 %>%
+select(contains("index"))
+str(index)

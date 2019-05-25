@@ -174,91 +174,95 @@ str(endline1_biz)
 ### By Random Forest
 
 ```{r}
-rf_tm <- function(target, treatment, data, cluster=NULL, num.iter=100) {
+tm_gates <- function(target, treatment, data, 
+                     split_ratio=0.5, cluster=0, num.iter=100, 
+                     ml_method="rf") {
   
+  # a list to store the regression results
   results <- list()
   
   # TODO implement user specified num.groups
   num.groups <- 5
   
-  # if cluster is not specified, use 0 as the placeholder
-  if (is.null(cluster) == TRUE) {
-    cluster <- 0
-  }
-
   for (i in 1:num.iter) {
     # set seed for reproduction
-    seed <- i
-    set.seed(seed)
+    set.seed(i)
   
     # seperate auxi and main sample  
-    auxi_ind <- createDataPartition(data[,target], p = 0.7, list = FALSE)
-    auxi <- data[auxi_ind, ]
-    main <- data[-auxi_ind,]
+    auxi_index <- createDataPartition(data[,target], p = split_ratio, list = FALSE)
+    auxi <- data[auxi_index, ]
+    main <- data[-auxi_index,]
   
     # seperate treatment & control in the auxiliary sample
-    auxi_treat_ind <- which(auxi[,treatment] == 1)
-    auxi_treat <- auxi[auxi_treat_ind, ]
-    auxi_contr <- auxi[-auxi_treat_ind,]
+    auxi_treat_index <- which(auxi[,treatment] == 1)
+    auxi_treat <- auxi[auxi_treat_index, ]
+    auxi_contr <- auxi[-auxi_treat_index,]
 
-    # fit a model to for auxi_treat and auxi_contr
-    auxi_formula <- as.formula(paste(target, " ~ ", "."))
-    auxi_yi0 <- randomForest(biz_index_all_1 ~ .,
-                             data = auxi_contr,
-                             ntree = 3000,
-                             mtry = 3,
-                             replace = TRUE,
-                             type = "regression")
-    auxi_yi1 <- randomForest(auxi_formula,
-                             data = auxi_treat,
-                             ntree = 3000,
-                             mtry = 3,
-                             replace = TRUE,
-                             type = "regression")
-    
-    # TODO implement option to use non-randomized treatment assignment
-    if (TRUE) {
-      # calculate propensity score (treated/all)
-      prop_score <- nrow(data[data$treatment == 1, ])/nrow(data)      
-    } else {
-      # fit a model to predict whether a observation was treated or not
-      auxi_d <- randomForest(treatment ~ . -biz_index_all_1 -hhid -w1,
-                             data = auxi,
-                             ntree = 1000,
-                             mtry = 3,
-                             replace = TRUE,
-                             type = "regression")
-      prop_score <- predict(auxi_d, newdata = main)
+    # use the specified machine learning method to predict the conditional treatment effect
+    if (ml_method == "rf") {
+      # fit a random forest on auxi_treat and auxi_contr
+      auxi_formula <- as.formula(paste(target, " ~ .", "-", treatment))
+      auxi_yi0 <- randomForest(auxi_formula,
+                               data = auxi_contr,
+                               ntree = 1000,
+                               mtry = 3,
+                               replace = TRUE,
+                               type = "regression")
+      auxi_yi1 <- randomForest(auxi_formula,
+                               data = auxi_treat,
+                               ntree = 1000,
+                               mtry = 3,
+                               replace = TRUE,
+                               type = "regression")
+      # predict the baseline effect and conditional treatment effect on main sample
+      main_yi0 <- predict(auxi_yi0, newdata = main)
+      main_yi1 <- predict(auxi_yi1, newdata = main)
+      main$baseline <- main_yi0
+      main$cte <- (main_yi1 - main_yi0)
+    } else if (ml_method == "crf") {
+      # fit a causal random forest on auxi sample
+      auxi_X <- auxi %>%
+        select(everything(), -target, -treatment)
+      auxi_Y <- auxi[, target]
+      auxi_W <- auxi[, treatment]
+      auxi_crf <- causal_forest(X = auxi_X,
+                                Y = auxi_Y,
+                                W = auxi_W,
+                                honesty = TRUE,
+                                mtry = 3,
+                                num.trees = 1000)
+      # predict the conditional treatment effect on main sample
+      auxi_crf_pred <- predict(auxi_crf, newdata = main)
+      main$cte <- auxi_crf_pred$predictions
     }
     
-    # assign each observation's propensity score
-    main$prop_score <- prop_score
-
-    # calculate the baseline effect and conditional treatment effect of main sample      
-    main_yi0 <- predict(auxi_yi0, newdata = main)
-    main_yi1 <- predict(auxi_yi1, newdata = main)
-    main$baseline <- main_yi0
-    main$condi_treat <- (main_yi1 - main_yi0)
-  
+    # TWO-MODELS APPROACH
     # Fit regression on conditional treatment effect
-    tm_exclude_col <- c("hhid", "areaid", "treatment", "baseline", "condi_treat","prop_score", target)
+    tm_exclude_col <- c(target, treatment, cluster,
+                        "baseline", "cte")
     data_col <- names(main)
     tm_formula <- as.formula(
       paste(
-        "condi_treat", "~",
+        "cte", "~",
         paste(data_col[!data_col %in% tm_exclude_col], collapse = " + ")))
   
     tm_model <- felm(tm_formula,
                      data = main,
                      weights = main$weight)
     
-    results[[1]] <- tm_model
+    results[[i]] <- tm_model
+    
+    # SORTED GROUP AVERAGE TREATMENT EFFECT
+    # calculate propensity score (treated/all)    
+    # TODO implement option to use non-randomized treatment assignment
+    prop_score <- nrow(data[data$treatment == 1, ])/nrow(data)      
+    main$prop_score <- prop_score
     
     # divide observations based on their predicted conditional treatment effect  
-    breaks <- quantile(main$condi_treat, seq(0,1, 1/num.groups), include.lowest = TRUE)
+    breaks <- quantile(main$cte, seq(0,1, 1/num.groups), include.lowest = TRUE)
     breaks[1] <- breaks[1] - 0.001
     breaks[6] <- breaks[6] + 0.001
-    main$treat_group <- cut(main$condi_treat, breaks = breaks)
+    main$treat_group <- cut(main$cte, breaks = breaks)
   
     # calculate the propensity score offset for each observation in main sample
     main$prop_offset <- main$treatment - main$prop_score
@@ -273,19 +277,25 @@ rf_tm <- function(target, treatment, data, cluster=NULL, num.iter=100) {
       1/prop_score*(1-prop_score))
   
     # fit weighted ols
-    exclude_col <- c(target_index, "hhid", "areaid", "treatment", 
-                     "prop_score", "treat_group", "prop_offset", "weight")
-    data_col <- names(main)
-    gates_formula <- as.formula(paste(target,
-                                      "~",
-                                      "-1+baseline+condi_treat+G1+G2+G3+G4+G5",
-                                      "|0|0|",
-                                      cluster))
+    if (ml_method == "rf") {
+      gates_formula <- as.formula(paste(target,
+                                        "~",
+                                        "-1+baseline+cte+G1+G2+G3+G4+G5",
+                                        "|0|0|",
+                                        cluster))
+    } else if (ml_method == "crf") {
+      gates_formula <- as.formula(paste(target,
+                                        "~",
+                                        "-1+cte+G1+G2+G3+G4+G5",
+                                        "|0|0|",
+                                        cluster))
+    }
+
     gates_model <- felm(gates_formula,
                         data = main,
                         weights = main$weight)
-    
-    results[[2]] <- gates_model
+
+    results[[num.iter+i]] <- gates_model
   }
   return(results)
 }

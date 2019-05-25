@@ -325,23 +325,40 @@ tm_gates_biz_nobiz <- rf_tm("biz_index_all_1", "treatment",
 #### Prepare The Dataset
 ```{r}
 endline1_biz_wo <- endline1_biz %>%
-  select(everything(), -contains("biz"), -contains("index"), biz_index_all_1)
+  select(everything(), -starts_with("biz"), -contains("index"), biz_index_all_1)
 ```
 
-#### Run The Model
+#### With Random Forest
 ```{r}
-tm_gates_biz_wo <- rf_gates("biz_index_all_1", "treatment", 
-                         endline1_biz_wo, cluster = "areaid", num.iter = 1)
+tm_gates_biz_wo <- tm_gates("biz_index_all_1", "treatment", endline1_biz_wo,
+                            cluster="areaid", num.iter=1, ml_method="rf")
 ```
 
-#### Results: Two-Models Approach
+###### Results: Two-Models Approach
 ```{r}
 summary(tm_gates_biz_wo[[1]])
 ```
 
-#### Results: GATES
+##### Results: GATES
 ```{r}
 summary(tm_gates_biz_wo[[2]])
+```
+
+#### With Causal Random Forest
+
+```{r}
+tm_gates_biz_wo_crf <- tm_gates("biz_index_all_1", "treatment", endline1_biz_wo,
+                                   cluster="areaid", num.iter=1, ml_method="crf")
+```
+
+###### Results: Two-Models Approach
+```{r}
+summary(tm_gates_biz_wo_crf[[1]])
+```
+
+##### Results: GATES
+```{r}
+summary(tm_gates_biz_wo_crf[[2]])
 ```
 
 # CAUSAL FOREST

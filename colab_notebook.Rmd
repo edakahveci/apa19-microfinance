@@ -177,9 +177,10 @@ endline1_biz <- endline1 %>%
 str(endline1_biz)
 ```
 
-## Sorted Group Treatment Effects (GATES)
+## Two-Models Approach With Sorted Group Average Treatment Effects (GATES)
 
-### Step 00: Setup Environment
+### Step By Step
+#### Step 00: Setup Environment
 
 Setup the following variables:
 
@@ -195,7 +196,7 @@ sim <- 100
 groups <- 5
 ```
 
-### Step 01: Split the data into Auxiliary and Main samples
+#### Step 01: Split the data into Auxiliary and Main samples
 
 ```{r}
 auxi_ind <- createDataPartition(dataset$treatment, p = 0.7, list = FALSE)
@@ -207,7 +208,7 @@ main <- dataset[-auxi_ind,]
 str(auxi)
 ```
 
-### Step 02: Train Two Models
+#### Step 02: Train Two Models
 
 In this section we use auxiliary sample to train two models:
 - $Y_i=\hat{g_0}(X_i,D_i=0)+\hat{U_i}$
@@ -235,7 +236,7 @@ auxi_yi1 <- randomForest(biz_index_all_1 ~ . - hhid - areaid - w1,
                          type = "regression")
 ```
 
-### Step 03: Train The Propensity Score Model
+#### Step 03: Train The Propensity Score Model
 
 Because we assumed the treatment was assigned randomly, the propensity score would be constant for all observations.
 
@@ -256,7 +257,7 @@ auxi_d <- randomForest(treatment ~ . -biz_index_all_1 -hhid -w1,
 prop_score <- predict(auxi_d, newdata = main)
 ```
 
-### Step 04: Estimate Conditional Baseline And Treatment Function
+#### Step 04: Estimate Conditional Baseline And Treatment Function
 
 We predict the conditonal baseline and conditional treatment effect for each observation in main sample using the models we train in Step02.
 
@@ -267,7 +268,7 @@ main$baseline <- main_yi0
 main$condi_treat <- (main_yi1 - main_yi0)
 ```
 
-### Step 05: Divide Observations Into Groups
+#### Step 05: Divide Observations Into Groups
 
 ```{r}
 breaks <- quantile(main$condi_treat, seq(0,1, 1/groups), include.lowest = TRUE)
@@ -276,13 +277,13 @@ breaks[6] <- breaks[6] + 0.001
 main$treat_group <- cut(main$condi_treat, breaks = breaks)
 ```
 
-### Step 06: Estimate The Propensity Score
+#### Step 06: Estimate The Propensity Score
 
 ```{r}
 main$prop_score <- prop_score
 ```
 
-### Step 07: Calculate Propensity Score Offset
+#### Step 07: Calculate Propensity Score Offset
 
 Prepare to perform the weighted OLS.
 $\sum_{k}\gamma_k*(D-p(X))*1(G_k)+v$
@@ -304,7 +305,7 @@ colnames(DSG) <- c("G1", "G2", "G3", "G4", "G5")
 head(DSG)
 ```
 
-### Step 08: Run Weighted OLS
+#### Step 08: Run Weighted OLS
 
 $Y=\alpha'X_1\sum_{g}\gamma_g*(D-p(X))*1(G_g)+v$
 
@@ -313,15 +314,13 @@ main[,c("G1", "G2", "G3", "G4", "G5")] <- cbind(
   DSG$G1, DSG$G2, DSG$G3, DSG$G4, DSG$G5)
 ```
 
-### Without Clustering
-
 ```{r}
 gates <- felm(biz_index_all_1~-1+baseline+condi_treat+G1+G2+G3+G4+G5|0|0|0,
               data = maine)
 summary(gates)
 ```
 
-### With Clustering
+#### Step 09: Run Weighted OLS With Clustering
 
 ```{r}
 gates_cl<- felm(biz_index_all_1~baseline+condi_treat+G1+G2+G3+G4+G5|0|0|areaid,
@@ -329,6 +328,8 @@ gates_cl<- felm(biz_index_all_1~baseline+condi_treat+G1+G2+G3+G4+G5|0|0|areaid,
                 weights = main$w1)
 summary(gates_cl)
 ```
+
+#### Step 10: Analyze Group-based properties
 
 ```{r}
 main %>% 
@@ -346,7 +347,7 @@ main %>%
             bis_profit = mean(bizprofit_1))
 ```
 
-### Function
+### Two-Models Approach With Random Forest
 
 ```{r}
 rf_gates <- function(target, treatment, data, cluster=NULL, num.iter=100) {

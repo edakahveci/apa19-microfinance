@@ -351,6 +351,7 @@ main %>%
 
 ```{r}
 rf_gates <- function(target, treatment, data, cluster=NULL, num.iter=100) {
+  
   results <- list()
   
   # TODO implement user specified num.groups
@@ -415,6 +416,20 @@ rf_gates <- function(target, treatment, data, cluster=NULL, num.iter=100) {
     main$baseline <- main_yi0
     main$condi_treat <- (main_yi1 - main_yi0)
   
+    # Fit regression on conditional treatment effect
+    tm_exclude_col <- c("hhid", "areaid", "treatment", "baseline", "condi_treat","prop_score", target)
+    data_col <- names(main)
+    tm_formula <- as.formula(
+      paste(
+        "condi_treat", "~",
+        paste(data_col[!data_col %in% tm_exclude_col], collapse = " + ")))
+  
+    tm_model <- felm(tm_formula,
+                     data = main,
+                     weights = main$weight)
+    
+    results[[1]] <- tm_model
+    
     # divide observations based on their predicted conditional treatment effect  
     breaks <- quantile(main$condi_treat, seq(0,1, 1/num.groups), include.lowest = TRUE)
     breaks[1] <- breaks[1] - 0.001
@@ -437,15 +452,16 @@ rf_gates <- function(target, treatment, data, cluster=NULL, num.iter=100) {
     exclude_col <- c(target_index, "hhid", "areaid", "treatment", 
                      "prop_score", "treat_group", "prop_offset", "weight")
     data_col <- names(main)
-    gates_formula <- as.formula(paste(target, "~",
-                                      paste(data_col[!data_col %in% exclude_col], collapse = " + "),
+    gates_formula <- as.formula(paste(target,
+                                      "~",
+                                      "-1+baseline+condi_treat+G1+G2+G3+G4+G5",
                                       "|0|0|",
                                       cluster))
-    model <- felm(gates_formula,
-                  data = main,
-                  weights = main$weight)
+    gates_model <- felm(gates_formula,
+                        data = main,
+                        weights = main$weight)
     
-    results[[i]] <- model
+    results[[2]] <- gates_model
   }
   return(results)
 }
@@ -455,7 +471,7 @@ rf_gates <- function(target, treatment, data, cluster=NULL, num.iter=100) {
 
 ```{r}
 gates_biz <- rf_gates("biz_index_all_1", "treatment", 
-                        endline1_biz, cluster = "areaid", num.iter = 1)
+                      endline1_biz, cluster = "areaid", num.iter = 1)
 summary(gates_biz[[1]])
 ```
 
@@ -475,37 +491,26 @@ summary(gates_biz_nobiz[[1]])
 
 ### Without Business-related Covariates and without Other Indexes
 
+#### Prepare The Dataset
 ```{r}
 endline1_biz_wo <- endline1_biz %>%
   select(everything(), -contains("biz"), -contains("index"), biz_index_all_1)
-str(endline1_biz_wo)
 ```
 
+#### Run The Model
 ```{r}
-gates_biz_wo <- rf_gates("biz_index_all_1", "treatment", 
+tm_gates_biz_wo <- rf_gates("biz_index_all_1", "treatment", 
                          endline1_biz_wo, cluster = "areaid", num.iter = 1)
-summary(gates_biz_wo[[1]])
 ```
 
+#### Results: Two-Models Approach
 ```{r}
-gates_summary <- data.frame(matrix(nrow = 2, ncol = 7))
-coefs <- c("baseline", "condi_treat", "G1", "G2", "G3", "G4", "G5")
-colnames(gates_summary) <- coefs
-
-for (coef in coefs) {
-  gates_summary[1, coef] <- median(sapply(gates_results, 
-                                          function(x) x$coefficients[coef, ]))
-  gates_summary[2, coef] <- mean(sapply(gates_cluster_results,
-                                          function(x) x$coefficients[coef, ]))
-}
+summary(tm_gates_biz_wo[[1]])
 ```
 
+#### Results: GATES
 ```{r}
-gates_summary[1, ] # median
-```
-
-```{r}
-gates_summary[2, ] # mean
+summary(tm_gates_biz_wo[[2]])
 ```
 
 ## CAUSAL FOREST WITH BUSINESS INDEX

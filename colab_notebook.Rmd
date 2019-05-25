@@ -179,178 +179,10 @@ str(endline1_biz)
 
 ## Two-Models Approach With Sorted Group Average Treatment Effects (GATES)
 
-### Step By Step
-#### Step 00: Setup Environment
-
-Setup the following variables:
-
-- Number of Simulations: 1 (for now)
-- Number of Groups: 5 (for now)
-- Treatment: `treatment`
-- Treatment Assignment: randomized assignment
-- Target Variable: `biz_index_all_1`
+### By Random Forest
 
 ```{r}
-set.seed(12345)
-sim <- 100
-groups <- 5
-```
-
-#### Step 01: Split the data into Auxiliary and Main samples
-
-```{r}
-auxi_ind <- createDataPartition(dataset$treatment, p = 0.7, list = FALSE)
-auxi <- dataset[auxi_ind, ]
-main <- dataset[-auxi_ind,]
-```
-
-```{r}
-str(auxi)
-```
-
-#### Step 02: Train Two Models
-
-In this section we use auxiliary sample to train two models:
-- $Y_i=\hat{g_0}(X_i,D_i=0)+\hat{U_i}$
-- $Y_i=\hat{g_0}(X_i,D_i=1)+\hat{U_i}$
-
-```{r}
-# seperate treatment & control in the auxiliary sample
-auxi_treat_ind <- which(auxi$treatment == 1)
-auxi_treat <- auxi[auxi_treat_ind, ]
-auxi_contr <- auxi[-auxi_treat_ind,]
-```
-
-```{r}
-auxi_yi0 <- randomForest(biz_index_all_1 ~ . - hhid - areaid - w1,
-                         data = auxi_contr,
-                         ntree = 3000, 
-                         mtry = 3, 
-                         replace = TRUE,
-                         type = "regression")
-auxi_yi1 <- randomForest(biz_index_all_1 ~ . - hhid - areaid - w1,
-                         data = auxi_treat,
-                         ntree = 3000,
-                         mtry = 3,
-                         replace = TRUE,
-                         type = "regression")
-```
-
-#### Step 03: Train The Propensity Score Model
-
-Because we assumed the treatment was assigned randomly, the propensity score would be constant for all observations.
-
-We use the auxiliary sample to train a model for propensity score.
-- $D_i=\hat{m_0}(X_i)+\hat{V_i}$
-
-```{r}
-prop_score <- nrow(dataset[dataset$treatment == 1, ])/nrow(dataset)
-```
-
-```{r}
-auxi_d <- randomForest(treatment ~ . -biz_index_all_1 -hhid -w1,
-                       data = auxi,
-                       ntree = 1000, 
-                       mtry = 3, 
-                       replace = TRUE,
-                       type = "regression")
-prop_score <- predict(auxi_d, newdata = main)
-```
-
-#### Step 04: Estimate Conditional Baseline And Treatment Function
-
-We predict the conditonal baseline and conditional treatment effect for each observation in main sample using the models we train in Step02.
-
-```{r}
-main_yi0 <- predict(auxi_yi0, newdata = main)
-main_yi1 <- predict(auxi_yi1, newdata = main)
-main$baseline <- main_yi0
-main$condi_treat <- (main_yi1 - main_yi0)
-```
-
-#### Step 05: Divide Observations Into Groups
-
-```{r}
-breaks <- quantile(main$condi_treat, seq(0,1, 1/groups), include.lowest = TRUE)
-breaks[1] <- breaks[1] - 0.001
-breaks[6] <- breaks[6] + 0.001
-main$treat_group <- cut(main$condi_treat, breaks = breaks)
-```
-
-#### Step 06: Estimate The Propensity Score
-
-```{r}
-main$prop_score <- prop_score
-```
-
-#### Step 07: Calculate Propensity Score Offset
-
-Prepare to perform the weighted OLS.
-$\sum_{k}\gamma_k*(D-p(X))*1(G_k)+v$
-
-First we calculate the propensity score offset $D-p(X)$. Then multiply with $1(G_k)$ to construct a dataframe that will later be used in the OLS formula.
-
-```{r}
-# calculate the propensity score offset for each observation in main sample
-main$prop_offset <- main$treatment - main$prop_score
-summary(main$prop_offset)
-```
-
-```{r}
-# construct matrix from each observation's group factor
-SGX <- model.matrix(~-1+main$treat_group)
-# construct D-p(X)*1(G_k) for each observation
-DSG <- data.frame(main$prop_offset*SGX)
-colnames(DSG) <- c("G1", "G2", "G3", "G4", "G5")
-head(DSG)
-```
-
-#### Step 08: Run Weighted OLS
-
-$Y=\alpha'X_1\sum_{g}\gamma_g*(D-p(X))*1(G_g)+v$
-
-```{r}
-main[,c("G1", "G2", "G3", "G4", "G5")] <- cbind(
-  DSG$G1, DSG$G2, DSG$G3, DSG$G4, DSG$G5)
-```
-
-```{r}
-gates <- felm(biz_index_all_1~-1+baseline+condi_treat+G1+G2+G3+G4+G5|0|0|0,
-              data = maine)
-summary(gates)
-```
-
-#### Step 09: Run Weighted OLS With Clustering
-
-```{r}
-gates_cl<- felm(biz_index_all_1~baseline+condi_treat+G1+G2+G3+G4+G5|0|0|areaid,
-                data = main,
-                weights = main$w1)
-summary(gates_cl)
-```
-
-#### Step 10: Analyze Group-based properties
-
-```{r}
-main %>% 
-  mutate(groups = case_when(
-      G1 != 0 ~ "G1",
-      G2 != 0 ~ "G2",
-      G3 != 0 ~ "G3",
-      G4 != 0 ~ "G4",
-      G5 != 0 ~ "G5",
-      TRUE ~ "unknown")) %>%
-  group_by(groups) %>%
-  summarize(bis_expense = mean(bizexpense_1),
-            informal_amt = mean(informal_amt_1),
-            spandana_amt = mean(spandana_amt_1),
-            bis_profit = mean(bizprofit_1))
-```
-
-### Two-Models Approach With Random Forest
-
-```{r}
-rf_gates <- function(target, treatment, data, cluster=NULL, num.iter=100) {
+rf_tm <- function(target, treatment, data, cluster=NULL, num.iter=100) {
   
   results <- list()
   
@@ -470,9 +302,8 @@ rf_gates <- function(target, treatment, data, cluster=NULL, num.iter=100) {
 ### With All The Covariates
 
 ```{r}
-gates_biz <- rf_gates("biz_index_all_1", "treatment", 
+tm_gates_biz <- rf_tm("biz_index_all_1", "treatment", 
                       endline1_biz, cluster = "areaid", num.iter = 1)
-summary(gates_biz[[1]])
 ```
 
 ### Without Business-related Covariates
@@ -480,13 +311,11 @@ summary(gates_biz[[1]])
 ```{r}
 endline1_biz_nobiz <- endline1_biz %>%
   select(everything(), -contains("biz"), biz_index_all_1)
-str(endline1_biz_nobiz)
 ```
 
 ```{r}
-gates_biz_nobiz <- rf_gates("biz_index_all_1", "treatment", 
+tm_gates_biz_nobiz <- rf_tm("biz_index_all_1", "treatment", 
                             endline1_biz_nobiz, cluster = "areaid", num.iter = 1)
-summary(gates_biz_nobiz[[1]])
 ```
 
 ### Without Business-related Covariates and without Other Indexes

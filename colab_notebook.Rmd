@@ -418,7 +418,7 @@ clusters <- endline1$areaid
 W <- endline1$treatment
 
 set.seed(123)
-forest_without_cluster <- causal_forest(
+forest_cluster <- causal_forest(
   model.matrix(~., data = X),
   y,
   W,

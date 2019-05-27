@@ -212,13 +212,13 @@ tm_gates <- function(target, treatment, data,
       auxi_formula <- as.formula(paste(target, " ~ .", "-", treatment))
       auxi_yi0 <- randomForest(auxi_formula,
                                data = auxi_contr,
-                               ntree = 1000,
+                               ntree = 3000,
                                mtry = 3,
                                replace = TRUE,
                                type = "regression")
       auxi_yi1 <- randomForest(auxi_formula,
                                data = auxi_treat,
-                               ntree = 1000,
+                               ntree = 3000,
                                mtry = 3,
                                replace = TRUE,
                                type = "regression")

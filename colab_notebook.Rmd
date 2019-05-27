@@ -47,7 +47,7 @@ for (covar in colnames(endlines)) {
 endline1 <- endlines %>%
   filter(sample1 == 1) %>%
   select(colnames(endlines)[1:16], contains("_1"),
-         -c("w", "w1", "w2", "sample1", "sample2"))
+         -c("hhid","w", "w1", "w2", "sample1", "sample2"))
 ```
 
 ```{r}

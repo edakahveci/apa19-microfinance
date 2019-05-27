@@ -369,6 +369,44 @@ summary(tm_gates_biz_wo_crf[[1]])
 summary(tm_gates_biz_wo_crf[[2]])
 ```
 
+#### With Minimal Dataset
+
+```{r}
+endline1_biz_mini <- endline1_biz %>%
+  select(everything(),
+         -contains("biz"),
+         -contains("index"),
+         -ends_with("mo_1"),
+         biz_index_all_1)
+```
+
+```{r}
+tm_gates_biz_mini <- tm_gates("biz_index_all_1", "treatment", endline1_biz_mini,
+                              cluster="areaid", num.iter=1, ml_method="rf")
+```
+
+```{r}
+summary(tm_gates_biz_mini[[1]])
+```
+
+```{r}
+summary(tm_gates_biz_mini[[2]])
+```
+
+```{r}
+tm_gates_biz_mini_crf <- tm_gates("biz_index_all_1", "treatment", endline1_biz_mini,
+                                  split_ratio = 0.6,
+                                  cluster="areaid", num.iter=1, ml_method="crf")
+```
+
+```{r}
+summary(tm_gates_biz_mini_crf[[1]])
+```
+
+```{r}
+summary(tm_gates_biz_mini_crf[[2]])
+```
+
 # CAUSAL FOREST
 
 ## Var_imp_plot function

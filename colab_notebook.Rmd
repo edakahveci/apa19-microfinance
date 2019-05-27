@@ -161,10 +161,11 @@ endline1 %>%
 target_index <- "biz_index_all_1"
 
 endline1_biz <- endline1 %>%
-  filter(any_biz_1 == 1) %>%
+  filter(is.na(target_index) != TRUE) %>%
   select(everything(),
-         -any_biz_1,
-#         -contains("index"),                              # prevent confounding
+         -contains("area"),
+         -contains("index"),                              # prevent confounding
+         areaid,
          target_index)                                    # add target index
 str(endline1_biz)
 ```
@@ -375,13 +376,13 @@ summary(tm_gates_biz_wo_crf[[2]])
 endline1_biz_mini <- endline1_biz %>%
   select(everything(),
          -contains("biz"),
-         -contains("index"),
          -ends_with("mo_1"),
          biz_index_all_1)
 ```
 
 ```{r}
 tm_gates_biz_mini <- tm_gates("biz_index_all_1", "treatment", endline1_biz_mini,
+                              split_ratio = 0.6,
                               cluster="areaid", num.iter=1, ml_method="rf")
 ```
 

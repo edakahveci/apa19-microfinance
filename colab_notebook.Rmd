@@ -184,12 +184,20 @@ tm_gates <- function(target, treatment, data,
   # TODO implement user specified num.groups
   num.groups <- 5
   
+  if (cluster != 0) {
+    strati_target <- cluster
+  } else {
+    strati_target <- treatment
+  }
+  
   for (i in 1:num.iter) {
     # set seed for reproduction
     set.seed(i)
   
     # seperate auxi and main sample  
-    auxi_index <- createDataPartition(data[,target], p = split_ratio, list = FALSE)
+    auxi_index <- createDataPartition(data[,strati_target],
+                                      p = split_ratio, 
+                                      list = FALSE)
     auxi <- data[auxi_index, ]
     main <- data[-auxi_index,]
   

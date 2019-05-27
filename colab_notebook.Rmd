@@ -171,6 +171,57 @@ str(endline1_biz)
 
 ## Two-Models Approach With Sorted Group Average Treatment Effects (GATES)
 
+## F-Tests
+```{r}
+auxi_ind <- createDataPartition(y = endline1$treatment, p = 0.7, list = FALSE)
+auxi <- endline1[auxi_ind, ]
+main <- endline1[-auxi_ind,]
+
+auxi_treat_ind <- which(auxi[,"treatment"] == 1)
+auxi_treat <- auxi[auxi_treat_ind, ]
+auxi_contr <- auxi[-auxi_treat_ind,]
+
+var.test(auxi_treat$spouse_literate_1, auxi_contr$spouse_literate_1, alternative = "two.sided")
+var.test(auxi_treat$spouse_works_wage_1, auxi_contr$spouse_works_wage_1, alternative = "two.sided")
+var.test(auxi_treat$hhsize_1, auxi_contr$hhsize_1, alternative = "two.sided")
+var.test(auxi_treat$women1845_1, auxi_contr$women1845_1, alternative = "two.sided")
+var.test(auxi_treat$anychild1318_1, auxi_contr$anychild1318_1, alternative = "two.sided")
+var.test(auxi_treat$old_biz, auxi_contr$old_biz, alternative = "two.sided")
+var.test(auxi_treat$ownland_hyderabad_1, auxi_contr$ownland_hyderabad_1, alternative = "two.sided")
+var.test(auxi_treat$ownland_village_1, auxi_contr$ownland_village_1, alternative = "two.sided")
+
+for (covar in colnames(auxi_treat)) {
+  F_test <- var.test(auxi_treat[,covar], auxi_contr[,covar], alternative = "two.sided")
+  signif_value <- 0.05
+  print(ifelse(F_test$p.value < 0.05, covar, 0))
+  }
+
+treated <- endline1 %>%
+  filter(treatment == 1)
+
+control <- endline1 %>%
+  filter(treatment == 0)
+ 
+var.test(treated$spouse_literate_1, control$spouse_literate_1, alternative = "two.sided")
+var.test(treated$spouse_works_wage_1, control$spouse_works_wage_1, alternative = "two.sided")
+var.test(treated$hhsize_1, control$hhsize_1, alternative = "two.sided")
+var.test(treated$women1845_1, control$women1845_1, alternative = "two.sided")
+var.test(treated$anychild1318_1, control$anychild1318_1, alternative = "two.sided")
+var.test(treated$old_biz, control$old_biz, alternative = "two.sided")
+var.test(treated$ownland_hyderabad_1, control$ownland_hyderabad_1, alternative = "two.sided")
+var.test(treated$ownland_village_1, control$ownland_village_1, alternative = "two.sided")
+
+for (covar in colnames(treated)) {
+  F_test <- var.test(treated[,covar], control[,covar], alternative = "two.sided")
+  signif_value <- 0.05
+  print(ifelse(F_test$p.value < 0.05, covar, 0))
+  }
+
+# The p-value of F-test is greater than the significance level 0.05. In conclusion, there is no significant difference between the two variances.
+
+```
+
+
 ### By Random Forest
 
 ```{r}
@@ -487,3 +538,5 @@ var_imp_plot(forest_cluster)
 index <- endline1 %>%
 select(contains("index"))
 str(index)
+
+# check other variables than areaid for the clusters

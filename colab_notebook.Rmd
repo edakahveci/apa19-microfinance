@@ -295,7 +295,7 @@ tm_gates <- function(target, treatment, data,
     } else if (ml_method == "crf") {
       gates_formula <- as.formula(paste(target,
                                         "~",
-                                        "-1+cte+G1+G2+G3+G4+G5",
+                                        "cte+G1+G2+G3+G4+G5",
                                         "|0|0|",
                                         cluster))
     }

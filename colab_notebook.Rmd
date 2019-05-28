@@ -18,7 +18,8 @@ library(grf)
 
 ```{r}
 endlines <- read.dta13("data/2013-0533_data_endlines1and2.dta",
-                       generate.factors = T)
+                       convert.factors = FALSE,
+                       generate.factors = TRUE)
 ```
 
 ## The Structure And Summary
@@ -27,31 +28,42 @@ endlines <- read.dta13("data/2013-0533_data_endlines1and2.dta",
 str(endlines)
 ```
 
-```{r}
-colnames(endlines)
-```
-
-## Convert Factors to Binary Variable
-
-```{r}
-for (covar in colnames(endlines)) {
-  if (is.factor(endlines[, covar]) == TRUE) {
-    endlines[, covar] <- as.numeric(endlines[, covar]) - 1
-  }
-}
-```
-
 ## Split Endline1 And Endline2
 
 ```{r}
 endline1 <- endlines %>%
   filter(sample1 == 1) %>%
-  select(colnames(endlines)[1:16], contains("_1"),
-         -c("w", "w1", "w2", "sample1", "sample2"))
+  select(colnames(endlines)[1:16], contains("_1"))
 ```
 
 ```{r}
 str(endline1)
+```
+
+## Exclude Irrelevant Covariates
+
+There are some variables in the dataset that are only relevant when the data were collected, such as the information of when the inspectors visit the households and if the households were included in the endline surveys.
+
+```{r}
+endline1 <- endline1 %>%
+  select(-c(w, w1, w2, sample1, sample2, visitday_1, visitmonth_1, visityear_1))
+```
+
+## Exclude Redundant Covariates
+
+Since we are going to use `areaid` to do cluster analysis, including the area-level variables doesn't make much sense.
+
+```{r}
+endline1 <- endline1 %>%
+  select(-starts_with("area_"))
+```
+
+The dataset include both total expense and per-capita version for each expense category per month (or annual). To prevent issues with overspecified (irrelevant variables), we exclude the total expenses and only leave the per-capita variables.
+
+```{r}
+endline1 <- endline1 %>%
+  select(-ends_with("mo_1"),
+         -ends_with("annual_1"))
 ```
 
 ## Deleting the Outliers

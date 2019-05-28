@@ -239,7 +239,7 @@ tm_gates <- function(target, treatment, data,
                                 W = auxi_W,
                                 honesty = TRUE,
                                 mtry = 3,
-                                num.trees = 1000)
+                                num.trees = 3000)
       # predict the conditional treatment effect on main sample
       auxi_crf_pred <- predict(auxi_crf, newdata = main)
       main$cte <- auxi_crf_pred$predictions

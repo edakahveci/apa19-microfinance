@@ -83,23 +83,63 @@ endline1_outlier <- endline1[
 
 ## Missing Values
 
+We will first delete the covariates that contains a huge amount of missing values. Then we will look into the remaining covariates and fill them with custom methods.
+
+First we need to find out which variable contains unreasonable amount of missing value.
+
 ```{r}
-endline1$girl515_workhrs_pc_1 <- NULL
-endline1$boy515_workhrs_pc_1 <- NULL
-endline1$girl1620_school_1 <- NULL
-endline1$boy1620_school_1 <- NULL
-endline1$girl515_school_1 <- NULL
-endline1$boy515_school_1 <- NULL
-endline1$female_biz_pct_1 <- NULL
-endline1$hours_child1620_week_1 <- NULL
-endline1$hours_girl1620_week_1 <- NULL
-endline1$hours_boy1620_week_1 <- NULL
-endline1$biz_stop_1 <- NULL
-endline1$biz_index_new_1 <- NULL
-endline1$biz_index_old_1 <- NULL
+# set the threshold of na ratio
+na_delete_threshold <- 0.2
+
+na_ratio_endline1 <- data.frame()
+for (i in 1:ncol(endline1)) {
+  n_na <- nrow(endline1[is.na(endline1[,i]),])
+  na_ratio <- n_na / nrow(endline1)
+  na_ratio_endline1[i, 1] <- colnames(endline1)[[i]]
+  na_ratio_endline1[i, 2] <- na_ratio
+}
+
+colnames(na_ratio_endline1) <- c("covariate", "na_ratio")
+na_ratio_endline1 %>% filter(na_ratio > na_delete_threshold)
+```
+
+We will delete those variables as the information might not be helpful.
+
+```{r}
+# select the variables that has a large amount of missing value
+na_delete_col <- (na_ratio_endline1 %>% filter(na_ratio > na_delete_threshold))[,1]
+# delete those variables
+for (col in na_delete_col) {
+  endline1[,col] <- NULL
+}
+```
+
+### Business-related Variables
+
+`old_biz` and `any_old_biz` contain similar information, the former indicates how many old businesses a household own prior to the first endline and the latter is a binary variable that indicates whether a household has at least an old business. Here we combine the two variables and assume those households that didn't answer the question was either not a busniess owner at all or not understood the question. Either ways, we could safely consider them as having 0 old busineses.
+
+```{r}
+endline1 <- endline1 %>%
+  mutate(old_biz = ifelse(any_old_biz == 0 | is.na(any_old_biz) == TRUE,
+                          0,
+                          old_biz))
+# Delete any_old_biz as the information is combined with old_biz
+endline1$any_old_biz <- NULL
+```
+
+The same reasoning could be apply to `total_biz_1` and `any_biz_1`.
+
+```{r}
+endline1 <- endline1 %>%
+  mutate(total_biz_1 = ifelse(any_biz_1 == 0 | is.na(any_biz_1) == TRUE,
+                              0,
+                              total_biz_1))
+# Delete any_biz_1 as the information is combined with total_biz_1
+endline1$any_biz_1 <- NULL
 ```
 
 ### Fill with Median
+
 ```{r}
 for (covar in colnames(endline1)) {
   if (is.numeric(endline1[, covar]) == TRUE) {
@@ -109,6 +149,15 @@ for (covar in colnames(endline1)) {
 }
 sapply(endline1, function(x) sum(is.na(x)))
 ```
+
+### Check The Result
+
+Check how many complete cases we have.
+
+```{r}
+length(endline1$hhid[complete.cases(endline1)])
+```
+
 
 ## Merge the Date
 

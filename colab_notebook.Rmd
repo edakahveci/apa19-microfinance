@@ -54,6 +54,20 @@ endline1 <- endlines %>%
 str(endline1)
 ```
 
+## Deleting the Outliers
+
+```{r}
+for (i in colnames(endline1)) {
+endline1 <- endline1[
+  (endline1[,i] < mean(endline1[,i], na.rm=TRUE)+3*sd(endline1[,i], na.rm=TRUE) | endline1[,i] < mean(endline1[,i], na.rm=TRUE)-3*sd(endline1[,i], na.rm=TRUE)),]
+}
+
+```
+
+```{r}
+endline1_outlier <- endline1[
+  (endline1$biz_index_all_1 < mean(endline1$biz_index_all_1, na.rm=TRUE)+3*sd(endline1$biz_index_all_1, na.rm=TRUE) | endline1$biz_index_all_1 < mean(endline1$biz_index_all_1, na.rm=TRUE)-3*sd(endline1$biz_index_all_1, na.rm=TRUE)),]
+```
 
 ## Missing Values
 
@@ -431,27 +445,93 @@ endline1_biz <- endline1 %>%
          -any_biz_1)  
 str(endline1_biz)
 
-y <- endline1_biz$biz_index_all_1
-X <- endline1_biz %>% 
-  select(
-    everything(), -treatment, -hhid,
--contains("index"), -contains("biz"), -contains("area"), 
--hhsize_1, -adults_1, children_1 
-)
-clusters <- endline1_biz$areaid
-W <- endline1_biz$treatment
+# test/train
+set.seed(123)
+idx.train <- caret::createDataPartition(y = endline1_biz$treatment, p = 0.75, list = FALSE) 
+train <- endline1_biz[idx.train, ] # training set
+test <-  endline1_biz[-idx.train, ]
 
+# train data
+y <- train$biz_index_all_1
+X <- train %>% 
+  select(
+    everything(), -treatment, -hhid, 
+-contains("index"), -contains("biz"), -contains("area"), -contains("mo_1"),
+-hhsize_adj_1 ,-hhsize_1, -adults_1, -children_1, areaid, -festival_exp_annual_1
+)
+clusters <- train$areaid
+W <- train$treatment
+
+# model
 set.seed(123)
 forest_cluster <- causal_forest(
   model.matrix(~., data = X),
   y,
   W,
-  clusters = clusters,
   mtry = 1, num.trees = 1000)
 forest_cluster
 
 var_imp_plot(forest_cluster)
+
+# test data
+test_y <- test$biz_index_all_1
+test_X <- test %>% 
+  select(
+    everything(), -treatment, -hhid, 
+-contains("index"), -contains("biz"), -contains("area"), -contains("mo_1"),
+-hhsize_adj_1, -hhsize_1, -adults_1, -children_1, areaid, -festival_exp_annual_1
+)
+test_clusters <- test$areaid
+test_W <- test$treatment
+
+# prediction
+preds <- predict(
+  object = forest_cluster, 
+  newdata = model.matrix(~ ., data = test_X, 
+  estimate.variance = TRUE
+))
+summary(train$biz_index_all_1)
+test$preds <- preds$predictions
+
+forest_cluster %>% 
+  variable_importance() %>% 
+  as.data.frame() %>% 
+  mutate(variable = colnames(forest_cluster$X.orig)) %>% 
+  arrange(desc(V1))
+
 ```
+
+
+
+
+```{r}
+p1 <- ggplot(test, aes(x = hours_headspouse_outside_1, y = preds)) +
+  geom_point() +
+  geom_smooth(method = "loess", span = 1) +
+  theme_light()
+
+p2 <- ggplot(test, aes(x = nondurable_exp_mo_pc_1, y = preds)) +
+  geom_point() +
+  geom_smooth(method = "loess", span = 1) +
+  theme_light()
+
+p3 <- ggplot(test, aes(x = head_age_1, y = preds)) +
+  geom_point() +
+  geom_smooth(method = "loess", span = 1) +
+  theme_light()
+
+p4 <- ggplot(test, aes(x = temptation_exp_mo_pc_1, y = preds)) +
+  geom_point() +
+  geom_smooth(method = "loess", span = 1) +
+  theme_light()
+
+install.packages("cowplot")
+library(cowplot)
+cowplot::plot_grid(p1, p2, p3, p4)
+```
+
+
+
 
 ## Credit Index
 ```{r}
@@ -536,7 +616,7 @@ var_imp_plot(forest_cluster)
 
 ```{r}
 index <- endline1 %>%
-select(contains("index"))
+select(contains("asset"))
 str(index)
-
+```
 # check other variables than areaid for the clusters

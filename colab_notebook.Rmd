@@ -10,6 +10,7 @@ library(caret)
 library(randomForest)
 library(lfe)
 library(grf)
+library(cowplot)
 ```
 
 # Data Preparation And Exploration
@@ -20,11 +21,6 @@ library(grf)
 endlines <- read.dta13("data/2013-0533_data_endlines1and2.dta",
                        convert.factors = FALSE,
                        generate.factors = TRUE)
-```
-
-## The Structure And Summary
-
-```{r}
 str(endlines)
 ```
 
@@ -57,56 +53,8 @@ The dataset include both total expense and per-capita version for each expense c
 
 ```{r}
 endline1 <- endline1 %>%
-  select(-ends_with("mo_1"),
-         -ends_with("annual_1"))
-```
-
-## Deleting the Outliers
-
-```{r}
-for (i in colnames(endline1)) {
-endline1 <- endline1[
-  (endline1[,i] < mean(endline1[,i], na.rm=TRUE)+3*sd(endline1[,i], na.rm=TRUE) | endline1[,i] < mean(endline1[,i], na.rm=TRUE)-3*sd(endline1[,i], na.rm=TRUE)),]
-}
-
-```
-
-```{r}
-endline1_outlier <- endline1[
-  (endline1$biz_index_all_1 < mean(endline1$biz_index_all_1, na.rm=TRUE)+3*sd(endline1$biz_index_all_1, na.rm=TRUE) | endline1$biz_index_all_1 < mean(endline1$biz_index_all_1, na.rm=TRUE)-3*sd(endline1$biz_index_all_1, na.rm=TRUE)),]
-```
-
-## Missing Values
-
-We will first delete the covariates that contains a huge amount of missing values. Then we will look into the remaining covariates and fill them with custom methods.
-
-First we need to find out which variable contains unreasonable amount of missing value.
-
-```{r}
-# set the threshold of na ratio
-na_delete_threshold <- 0.2
-
-na_ratio_endline1 <- data.frame()
-for (i in 1:ncol(endline1)) {
-  n_na <- nrow(endline1[is.na(endline1[,i]),])
-  na_ratio <- n_na / nrow(endline1)
-  na_ratio_endline1[i, 1] <- colnames(endline1)[[i]]
-  na_ratio_endline1[i, 2] <- na_ratio
-}
-
-colnames(na_ratio_endline1) <- c("covariate", "na_ratio")
-na_ratio_endline1 %>% filter(na_ratio > na_delete_threshold)
-```
-
-We will delete those variables as the information might not be helpful.
-
-```{r}
-# select the variables that has a large amount of missing value
-na_delete_col <- (na_ratio_endline1 %>% filter(na_ratio > na_delete_threshold))[,1]
-# delete those variables
-for (col in na_delete_col) {
-  endline1[,col] <- NULL
-}
+  select(-ends_with("_mo_1"),
+         -ends_with("_annual_1"))
 ```
 
 ### Business-related Variables
@@ -133,42 +81,150 @@ endline1 <- endline1 %>%
 endline1$any_biz_1 <- NULL
 ```
 
-### Fill with Median
+```{r}
+endline1 <- endline1 %>%
+  mutate(newbiz_1 = ifelse(any_new_biz_1 == 0 | is.na(any_new_biz_1) == TRUE,
+                           0,
+                           newbiz_1))
+# Delete any_biz_1 as the information is combined with newbiz_1
+endline1$any_new_biz_1 <- NULL
+```
+
+### Loan-related Variables
 
 ```{r}
-for (covar in colnames(endline1)) {
-  if (is.numeric(endline1[, covar]) == TRUE) {
-    endline1[is.na(endline1[, covar]), covar] <- median(endline1[, covar], 
-                                                        na.rm = TRUE)
+endline1 %>% 
+  select(anymfi_1, spandana_1, othermfi_1) %>% 
+  mutate(mfi = max(spandana_1, othermfi_1)) %>% 
+  filter(anymfi_1 != mfi) %>%
+  nrow()
+
+endline1 %>% 
+  select(anymfi_amt_1, spandana_amt_1, othermfi_amt_1) %>% 
+  mutate(total_mfi_amt = spandana_amt_1 + othermfi_amt_1) %>% 
+  filter(anymfi_amt_1 != total_mfi_amt) %>%
+  nrow()
+```
+
+```{r}
+endline1$anymfi_1 <- NULL
+endline1$anymfi_amt_1 <- NULL
+```
+
+### Labor-related Variables
+
+```{r}
+endline1 %>% 
+  select(hours_week_1, hours_week_biz_1, hours_week_outside_1) %>% 
+  mutate(hours_week_sum = hours_week_biz_1 + hours_week_outside_1) %>% 
+  filter(hours_week_1 != hours_week_sum) %>%
+  nrow()
+
+endline1 %>% 
+  select(hours_headspouse_week_1, hours_headspouse_biz_1, hours_headspouse_outside_1) %>% 
+  mutate(hours_headspouse_week_sum = hours_headspouse_biz_1 + hours_headspouse_outside_1) %>% 
+  filter(hours_headspouse_week_1 != hours_headspouse_week_sum) %>%
+  nrow()
+
+endline1 %>% 
+  select(hours_child1620_week_1, hours_boy1620_week_1, hours_girl1620_week_1) %>% 
+  mutate(hours_children_total = hours_boy1620_week_1 + hours_girl1620_week_1) %>% 
+  filter(hours_child1620_week_1 != hours_children_total) %>%
+  nrow()
+```
+
+```{r}
+endline1$hours_week_1 <- NULL
+endline1$hours_headspouse_week_1 <- NULL
+endline1$hours_child1620_week_1 <- NULL
+```
+
+## Missing Values
+
+We will first delete the covariates that contains a huge amount of missing values. Then we will look into the remaining covariates and fill them with custom methods.
+
+First we need to find out which variable contains unreasonable amount of missing value.
+
+```{r}
+na_table <- function(x) {
+  na_table <- data.frame()
+  for (i in 1:ncol(x)) {
+    n_na <- nrow(x[is.na(x[,i]),])
+    na_ratio <- n_na / nrow(x)
+    na_table[i, 1] <- colnames(x)[[i]]
+    na_table[i, 2] <- n_na
+    na_table[i, 3] <- na_ratio
+    colnames(na_table) <- c("covariate", "n", "ratio")
   }
+  return(na_table)
 }
-sapply(endline1, function(x) sum(is.na(x)))
+```
+
+```{r}
+# set the threshold of na ratio
+na_delete_threshold <- 0.1
+na_table(endline1) %>% filter(ratio > na_delete_threshold)
+```
+
+We will delete those variables as the information might not be helpful.
+
+```{r}
+# select the variables that has a large amount of missing value
+na_delete_col <- (na_table(endline1) %>% filter(ratio > na_delete_threshold))[,1]
+# delete those variables
+for (col in na_delete_col) {
+  endline1[,col] <- NULL
+}
+```
+
+### Filling The Missing Values - Business-related Variables
+
+```{r}
+endline1 <- endline1 %>% 
+  mutate(bizassets_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
+                              0,
+                              bizassets_1),
+         bizinvestment_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
+                                  0,
+                                  bizinvestment_1),
+         bizrev_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
+                           0,
+                           bizrev_1),
+         bizexpense_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
+                               0,
+                               bizexpense_1),
+         bizprofit_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
+                              0,
+                              bizprofit_1),
+         bizemployees_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
+                                 0,
+                                 bizemployees_1))
+```
+
+### For All The Other Variabes Except Index Variables
+
+```{r}
+covariates_name <- endline1 %>% 
+  select(-contains("index")) %>%
+  colnames()
+for (covar in covariates_name) {
+  endline1[is.na(endline1[, covar]), covar] <- 
+    median(endline1[, covar], na.rm = TRUE)
+}
 ```
 
 ### Check The Result
 
-Check how many complete cases we have.
-
 ```{r}
-length(endline1$hhid[complete.cases(endline1)])
+na_table(endline1) %>% filter(n != 0)
 ```
 
+## Deleting the Outliers
 
-## Merge the Date
-
-```{r}
-endline1$visitdate <- as.Date(with(endline1, paste(visityear_1, visitmonth_1, visitday_1,sep="-")), "%Y-%m-%d")
-str(endline1$visitdate)
-summary(endline1$visitdate)
-```
+First we want to know which column (variable) contains outliers and how many of them. Here we will use "Z-score" approach to detect outliers.
 
 ```{r}
-endline1$visitday_1 <- NULL
-endline1$visitmonth_1 <- NULL
-endline1$visityear_1 <- NULL
-endline1$visitdate <- NULL
-endline1$w1 <- NULL
-endline1$w2 <- NULL
+endline1_outlier <- scores(x = endline1[, 4:ncol(endline1)], type = "z", prob = 0.999)
 ```
 
 # Design Of The Study

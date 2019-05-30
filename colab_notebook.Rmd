@@ -34,13 +34,10 @@ str(endlines)
 endline1 <- endlines %>%
   filter(sample1 == 1) %>%
   select(colnames(endlines)[1:16], contains("_1"))
-```
-
-```{r}
 str(endline1)
 ```
 
-## Exclude Irrelevant Covariates
+## Exclude Irrelevant & Redundant Covariates
 
 There are some variables in the dataset that are only relevant when the data were collected, such as the information of when the inspectors visit the households and if the households were included in the endline surveys.
 
@@ -48,8 +45,6 @@ There are some variables in the dataset that are only relevant when the data wer
 endline1 <- endline1 %>%
   select(-c(w, w1, w2, sample1, sample2, visitday_1, visitmonth_1, visityear_1))
 ```
-
-## Exclude Redundant Covariates
 
 Since we are going to use `areaid` to do cluster analysis, including the area-level variables doesn't make much sense.
 

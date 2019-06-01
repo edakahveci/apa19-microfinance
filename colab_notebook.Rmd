@@ -90,6 +90,20 @@ endline1 <- endline1 %>%
 endline1$any_new_biz_1 <- NULL
 ```
 
+### Household-related variables
+
+```{r}
+endline1 %>% 
+  select(hhsize_1, adults_1, children_1) %>% 
+  mutate(hh_total = adults_1 + children_1) %>% 
+  filter(hhsize_1 != hh_total) %>%
+  nrow()
+```
+
+```{r}
+endline1$hhsize_1 <- NULL
+```
+
 ### Loan-related Variables
 
 ```{r}

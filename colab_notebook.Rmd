@@ -300,18 +300,11 @@ endline1 %>%
 target_index <- "biz_index_all_1"
 
 endline1_biz <- endline1 %>%
-<<<<<<< HEAD
   select(everything(),
+         -hhid,
          -starts_with("biz"),
-         -contains("index"),                              # prevent confounding
-=======
-  filter(is.na(target_index) != TRUE) %>%
-  select(everything(),
-         -contains("area"),
-         -contains("index"),                              # prevent confounding
-         areaid,
->>>>>>> tm-with-causalrf
-         target_index)                                    # add target index
+         -contains("index"), # prevent confounding
+         target_index)       # add target index
 str(endline1_biz)
 ```
 

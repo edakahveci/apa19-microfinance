@@ -374,7 +374,6 @@ for (covar in colnames(treated)) {
 
 ```
 
-
 ### By Random Forest
 
 ```{r}
@@ -581,18 +580,49 @@ var_imp_plot <- function(forest, decay.exponent = 2L, max.depth = 4L) {
 }
 ```
 
-## Business Index
+## Trend Plots Function
+
 ```{r}
-target_index <- "biz_index_all_1"
+trend_plots <- function(crf, test) {
+  # Get the variable importance table
+  var_imp <- crf %>% 
+    variable_importance() %>% 
+    as.data.frame() %>% 
+    mutate(variable = colnames(crf$X.orig)) %>% 
+    arrange(desc(V1))
+  # for the first four most important variable
+  # create a plot that shows if there are trend of correlation
+  p1 <- ggplot(test, aes(x = test[, var_imp$variable[1]], y = preds)) +
+    geom_point() +
+    geom_smooth(method = "loess", span = 1) +
+    theme_light() +
+    labs(x = var_imp$variable[1], y = "pred. CTE")
+  p2 <- ggplot(test, aes(x = test[, var_imp$variable[2]], y = preds)) +
+    geom_point() +
+    geom_smooth(method = "loess", span = 1) +
+    theme_light() +
+    labs(x = var_imp$variable[2], y = "pred. CTE")
+  p3 <- ggplot(test, aes(x = test[, var_imp$variable[3]], y = preds)) +
+    geom_point() +
+    geom_smooth(method = "loess", span = 1) +
+    theme_light() +
+    labs(x = var_imp$variable[3], y = "pred. CTE")
+  p4 <- ggplot(test, aes(x = test[, var_imp$variable[4]], y = preds)) +
+    geom_point() +
+    geom_smooth(method = "loess", span = 1) +
+    theme_light() +
+    labs(x = var_imp$variable[4], y = "pred. CTE")
+  # combine those plots
+  cowplot::plot_grid(p1, p2, p3, p4)
+}
+```
 
-endline1_biz <- endline1 %>%
-  filter(any_biz_1 == 1) %>%
-  select(everything(),
-         -any_biz_1)  
-str(endline1_biz)
+## Business Index
 
-# test/train
+```{r}
 set.seed(123)
+target_index <- "biz_index_all_1"
+# test/train
 idx.train <- caret::createDataPartition(y = endline1_biz$treatment, p = 0.75, list = FALSE) 
 train <- endline1_biz[idx.train, ] # training set
 test <-  endline1_biz[-idx.train, ]
@@ -600,84 +630,38 @@ test <-  endline1_biz[-idx.train, ]
 # train data
 y <- train$biz_index_all_1
 X <- train %>% 
-  select(
-    everything(), -treatment, -hhid, 
--contains("index"), -contains("biz"), -contains("area"), -contains("mo_1"),
--hhsize_adj_1 ,-hhsize_1, -adults_1, -children_1, areaid, -festival_exp_annual_1
-)
+  select(-treatment, -target_index)
 clusters <- train$areaid
 W <- train$treatment
 
 # model
-set.seed(123)
 forest_cluster <- causal_forest(
   model.matrix(~., data = X),
   y,
   W,
-  mtry = 1, num.trees = 1000)
-forest_cluster
+  mtry = 3, num.trees = 3000)
 
 var_imp_plot(forest_cluster)
+```
 
+```{r}
 # test data
 test_y <- test$biz_index_all_1
 test_X <- test %>% 
-  select(
-    everything(), -treatment, -hhid, 
--contains("index"), -contains("biz"), -contains("area"), -contains("mo_1"),
--hhsize_adj_1, -hhsize_1, -adults_1, -children_1, areaid, -festival_exp_annual_1
-)
+  select(-treatment, -target_index)
 test_clusters <- test$areaid
 test_W <- test$treatment
 
 # prediction
 preds <- predict(
   object = forest_cluster, 
-  newdata = model.matrix(~ ., data = test_X, 
-  estimate.variance = TRUE
-))
-summary(train$biz_index_all_1)
+  newdata = model.matrix(~ ., data = test_X, estimate.variance = TRUE))
 test$preds <- preds$predictions
-
-forest_cluster %>% 
-  variable_importance() %>% 
-  as.data.frame() %>% 
-  mutate(variable = colnames(forest_cluster$X.orig)) %>% 
-  arrange(desc(V1))
-
 ```
-
-
-
 
 ```{r}
-p1 <- ggplot(test, aes(x = hours_headspouse_outside_1, y = preds)) +
-  geom_point() +
-  geom_smooth(method = "loess", span = 1) +
-  theme_light()
-
-p2 <- ggplot(test, aes(x = nondurable_exp_mo_pc_1, y = preds)) +
-  geom_point() +
-  geom_smooth(method = "loess", span = 1) +
-  theme_light()
-
-p3 <- ggplot(test, aes(x = head_age_1, y = preds)) +
-  geom_point() +
-  geom_smooth(method = "loess", span = 1) +
-  theme_light()
-
-p4 <- ggplot(test, aes(x = temptation_exp_mo_pc_1, y = preds)) +
-  geom_point() +
-  geom_smooth(method = "loess", span = 1) +
-  theme_light()
-
-install.packages("cowplot")
-library(cowplot)
-cowplot::plot_grid(p1, p2, p3, p4)
+trend_plots(forest_cluster, test)
 ```
-
-
-
 
 ## Credit Index
 ```{r}

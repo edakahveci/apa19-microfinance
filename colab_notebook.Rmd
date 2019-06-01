@@ -229,21 +229,15 @@ nrow(endline1)
 
 First we want to know which column (variable) contains outliers and how many of them. Here we will use "Z-score" approach to detect outliers.
 
+
 ```{r}
-endline1_outlier <- scores(x = endline1[, 4:ncol(endline1)], type = "z", prob = 0.99)
-numeric_col <- c("old_biz", "hhsize_1", "hhsize_adj_1", "adults_1", "children_1",
-                 "head_age_1", "women18145_1", "mfi_loan_cycles_1", "spandana_amt_1",
-                 "othermfi_amt_1", "bank_amt_1", "informal_amt_1", "anyloan_amt_1",
-                 "bizassets_1", "bizinvestment_1", "bizrev_1", "bizexpense_1",
-                 "bizprofit_1", "bizemployees_1", "total_biz_1", "newbiz_1", "female_biz_1",
-                 "female_biz_new_1", "wages_nonbiz_1", "hours_week_biz_1")
-outlier_table <- data.frame()
-for (i in 1:ncol(endline1_outlier)) {
-  n_outlier <- length(endline1_outlier[endline1_outlier[, i], i])
-  outlier_table[i,1] <- colnames(endline1_outlier)[i]
-  outlier_table[i,2] <- n_outlier
+exp_col <- endline1 %>% 
+  select(contains("exp_mo_pc")) %>%
+  colnames()
+for (covar in exp_col) {
+  covar_outlier <- scores(x = endline1[, covar], type = "iqr", lim = 5)
+  endline1 <- endline1[!covar_outlier, ]
 }
-outlier_table
 ```
 
 # Design Of The Study

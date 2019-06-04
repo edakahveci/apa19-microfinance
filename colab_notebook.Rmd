@@ -63,6 +63,11 @@ endline1 <- endline1 %>%
 `old_biz` and `any_old_biz` contain similar information, the former indicates how many old businesses a household own prior to the first endline and the latter is a binary variable that indicates whether a household has at least an old business. Here we combine the two variables and assume those households that didn't answer the question was either not a busniess owner at all or not understood the question. Either ways, we could safely consider them as having 0 old busineses.
 
 ```{r}
+summary(endline1$old_biz)
+summary(endline1$any_old_biz)
+```
+
+```{r}
 endline1 <- endline1 %>%
   mutate(old_biz = ifelse(any_old_biz == 0 | is.na(any_old_biz) == TRUE,
                           0,
@@ -104,6 +109,7 @@ endline1 %>%
 ```{r}
 endline1$hhsize_1 <- NULL
 ```
+
 
 ### Loan-related Variables
 
@@ -175,6 +181,7 @@ na_table <- function(x) {
 }
 ```
 
+
 ```{r}
 # set the threshold of na ratio
 na_delete_threshold <- 0.1
@@ -191,6 +198,7 @@ for (col in na_delete_col) {
   endline1[,col] <- NULL
 }
 ```
+
 
 ### Filling The Missing Values - Business-related Variables
 
@@ -216,7 +224,7 @@ endline1 <- endline1 %>%
                                  bizemployees_1))
 ```
 
-### For All The Other Variabes Except Index Variables
+### For All The Other Variables Except Index Variables
 
 ```{r}
 covariates_name <- endline1 %>% 
@@ -619,9 +627,18 @@ trend_plots <- function(crf, test) {
 ## Business Index
 
 ```{r}
-set.seed(123)
 target_index <- "biz_index_all_1"
+
+endline1_biz <- endline1 %>%
+  select(everything(),
+         -hhid,
+         -starts_with("biz"),
+         -contains("index"), # prevent confounding
+         target_index)       # add target index
+str(endline1_biz)
+
 # test/train
+set.seed(123)
 idx.train <- caret::createDataPartition(y = endline1_biz$treatment, p = 0.75, list = FALSE) 
 train <- endline1_biz[idx.train, ] # training set
 test <-  endline1_biz[-idx.train, ]
@@ -647,6 +664,142 @@ var_imp_plot(forest)
 
 # test data
 test_Y <- test$biz_index_all_1
+test_X <- test %>% 
+  select(-treatment, -target_index, -areaid)
+test_clusters <- test$areaid
+test_W <- test$treatment
+
+# prediction
+preds <- predict(
+  object = forest,
+  newdata = model.matrix(~ ., data = test_X, estimate.variance = TRUE))
+test$preds <- preds$predictions
+trend_plots(forest, test)
+```
+
+```{r}
+forest
+```
+
+
+```{r}
+Y.forest = regression_forest(X, Y, clusters = X.clusters)
+Y.hat = predict(Y.forest)$predictions
+W.forest = regression_forest(X, W, clusters = X.clusters)
+W.hat = predict(W.forest)$predictions
+
+cf.raw = causal_forest(X, Y, W,
+                       Y.hat = Y.hat, W.hat = W.hat,
+                       clusters = X.clusters)
+
+varimp = variable_importance(cf.raw)
+selected.idx = which(varimp > mean(varimp))
+
+cf = causal_forest(X[,selected.idx], Y, W,
+                   Y.hat = Y.hat, W.hat = W.hat,
+                   clusters = X.clusters,
+                   samples_per_cluster = 10,
+                   tune.parameters = TRUE)
+
+tau.hat = predict(cf)$predictions
+```
+
+### Confidence Interval for Average Treatment Effects
+
+```{r}
+high_effect = tau.hat > median(tau.hat)
+ate.high = average_treatment_effect(cf, subset = high_effect) 
+ate.low = average_treatment_effect(cf, subset = !high_effect) 
+
+paste("95% CI for difference in ATE:",
+round(ate.high[1] - ate.low[1], 3), "+/-",
+round(qnorm(0.975) * sqrt(ate.high[2]^2 + ate.low[2]^2), 3))
+```
+
+### Best Linear Predictor
+
+```{r}
+test_calibration(cf)
+```
+Heterogeneity with 0.1 significance.
+
+### The Effects of `hours_week_biz_1` and `total_exp_mo_pc_1`
+
+```{r}
+area.mat = model.matrix(~ -1 + areaid, data = train)
+area.size = colSums(area.mat)
+
+dr.score = tau.hat + W / cf$W.hat * (Y - cf$Y.hat - (1 - cf$W.hat) * tau.hat) -
+  (1 - W) / (1 - cf$W.hat) * (Y - cf$Y.hat + cf$W.hat * tau.hat)
+
+area.score = area.mat * dr.score / area.size
+```
+
+
+```{r}
+area.hours_biz = area.mat * X$hours_week_biz_1/ area.size
+high_hours_biz = area.hours_biz > median(area.hours_biz) 
+t.test(area.score[high_hours_biz], area.score[!high_hours_biz])
+```
+
+
+```{r}
+area.total_exp = area.mat * X$total_exp_mo_pc_1 / area.size
+high_total_exp = area.total_exp > median(area.total_exp) 
+t.test(area.score[high_total_exp], area.score[!high_total_exp])
+```
+
+```{r}
+area.food_exp = area.mat * X$food_exp_mo_pc_1 / area.size
+high.food_exp = area.food_exp > median(area.food_exp) 
+t.test(area.score[high.food_exp], area.score[!high.food_exp]) 
+```
+There is heterogeneity along `hours_week_biz_1` and `total_exp_mo_pc_1` with 0.05 significance.
+
+## Credit Index
+```{r}
+target_index <- "credit_index_1"
+
+endline1_credit <- endline1 %>%
+  select(everything(),
+         -hhid,
+         -spandana_1,
+         -othermfi_1,
+         -anybank_1,
+         -anyinformal_1,
+         -anyloan_1,
+         -contains("amt"),
+         -contains("index"), # prevent confounding
+         target_index)       # add target index
+str(endline1_credit)
+
+# test/train
+set.seed(123)
+idx.train <- caret::createDataPartition(y = endline1_credit$treatment, p = 0.75, list = FALSE) 
+train <- endline1_credit[idx.train, ] # training set
+test <-  endline1_credit[-idx.train, ]
+
+# train data
+Y <- train$credit_index_1
+X <- train %>% 
+  select(-treatment, -target_index, -areaid)
+X.clusters <- train$areaid
+W <- train$treatment
+
+# model
+forest <- causal_forest(
+  model.matrix(~., data = X),
+  Y,
+  W,
+  clusters = X.clusters,
+  mtry = 3, 
+  num.trees = 3000,
+  honesty = TRUE)
+
+var_imp_plot(forest)
+
+# test data
+test_Y <- test$credit_index_1
 test_X <- test %>% 
   select(-treatment, -target_index, -areaid)
 test_clusters <- test$areaid
@@ -699,8 +852,9 @@ round(qnorm(0.975) * sqrt(ate.high[2]^2 + ate.low[2]^2), 3))
 ```{r}
 test_calibration(cf)
 ```
+There is heterogeneity.
 
-### The Effects of `total_exp_mo_pc_1` and `food_exp_mo_pc_1`
+### The Effects of `total_exp_mo_pc_1` and `food_exp_mo_pc_1` and `nondurable_exp_mo_pc_1`
 
 ```{r}
 area.mat = model.matrix(~ -1 + areaid, data = train)
@@ -725,99 +879,130 @@ area.food_exp = area.mat * X$food_exp_mo_pc_1 / area.size
 high.food_exp = area.food_exp > median(area.food_exp) 
 t.test(area.score[high.food_exp], area.score[!high.food_exp]) 
 ```
-
 ```{r}
-area.food_exp.levels = cut(area.food_exp,
-                           breaks = c(-Inf,
-                                      quantile(area.food_exp, c(1/3, 2/3)),
-                                      Inf))
-summary(aov(area.score ~ area.food_exp.levels))
+area.nondurable_exp = area.mat * X$nondurable_exp_mo_pc_1 / area.size
+high.nondurable_exp = area.nondurable_exp > median(area.nondurable_exp) 
+t.test(area.score[high.nondurable_exp], area.score[!high.nondurable_exp]) 
 ```
+There is heterogeneity along `total_exp_mo_pc_1` and `food_exp_mo_pc_1` and `nondurable_exp_mo_pc_1`.
 
-## Credit Index
-```{r}
-target_index <- "credit_index_1"
-
-y <- endline1$credit_index_1
-X <- endline1 %>% 
-  select(
-    everything(), -treatment, -hhid, -areaid,
--contains("index"), -contains("area"), -contains("amt"), -contains("mfi"), 
--spandana_1, -anyloan_1, -anybank_1, -anyinformal_1, -everlate_1,
--hhsize_1, -adults_1, -children_1 
-)
-clusters <- endline1$areaid
-W <- endline1$treatment
-
-set.seed(123)
-forest_cluster <- causal_forest(
-  model.matrix(~., data = X),
-  y,
-  W,
-  clusters = clusters,
-  mtry = 1, num.trees = 1000)
-forest_cluster
-
-var_imp_plot(forest_cluster)
-```
-
-## Home Durable Index
-```{r}
-target_index <- "home_durable_index_1"
-
-y <- endline1$home_durable_index_1
-X <- endline1 %>% 
-  select(
-    everything(), -treatment, -hhid, -areaid,
--contains("index"), -contains("area"), -contains("exp"), bizexpense_1, 
--hhsize_1, -adults_1, -children_1 
-)
-clusters <- endline1$areaid
-W <- endline1$treatment
-
-str(X)
-set.seed(123)
-forest_cluster <- causal_forest(
-  model.matrix(~., data = X),
-  y,
-  W,
-  clusters = clusters,
-  mtry = 1, num.trees = 1000)
-forest_cluster
-
-var_imp_plot(forest_cluster)
-```
 
 ## Consumption Index
 ```{r}
 target_index <- "consumption_index_1"
 
-y <- endline1$consumption_index_1
-X <- endline1 %>% 
-  select(
-    everything(), -treatment, -hhid, -areaid,
--contains("index"), -contains("area"), -contains("exp"), bizexpense_1, 
--hhsize_1, -adults_1, -children_1 
-)
-clusters <- endline1$areaid
-W <- endline1$treatment
+endline1_consumption <- endline1 %>%
+  select(everything(),
+         -hhid,
+         -contains("exp"),
+         bizexpense_1,
+         -contains("index"), # prevent confounding
+         target_index)       # add target index
+str(endline1_consumption)
 
-str(X)
+
+# test/train
 set.seed(123)
-forest_cluster <- causal_forest(
-  model.matrix(~., data = X),
-  y,
-  W,
-  clusters = clusters,
-  mtry = 1, num.trees = 1000)
-forest_cluster
+idx.train <- caret::createDataPartition(y = endline1_consumption$treatment, p = 0.75, list = FALSE) 
+train <- endline1_consumption[idx.train, ] # training set
+test <-  endline1_consumption[-idx.train, ]
 
-var_imp_plot(forest_cluster)
+# train data
+Y <- train$consumption_index_1
+X <- train %>% 
+  select(-treatment, -target_index, -areaid)
+X.clusters <- train$areaid
+W <- train$treatment
+
+# model
+forest <- causal_forest(
+  model.matrix(~., data = X),
+  Y,
+  W,
+  clusters = X.clusters,
+  mtry = 3, 
+  num.trees = 3000,
+  honesty = TRUE)
+
+var_imp_plot(forest)
+
+# test data
+test_Y <- test$consumption_index_1
+test_X <- test %>% 
+  select(-treatment, -target_index, -areaid)
+test_clusters <- test$areaid
+test_W <- test$treatment
+
+# prediction
+preds <- predict(
+  object = forest,
+  newdata = model.matrix(~ ., data = test_X, estimate.variance = TRUE))
+test$preds <- preds$predictions
+trend_plots(forest, test)
 ```
 
 ```{r}
-index <- endline1 %>%
-select(contains("asset"))
-str(index)
+Y.forest = regression_forest(X, Y, clusters = X.clusters)
+Y.hat = predict(Y.forest)$predictions
+W.forest = regression_forest(X, W, clusters = X.clusters)
+W.hat = predict(W.forest)$predictions
+
+cf.raw = causal_forest(X, Y, W,
+                       Y.hat = Y.hat, W.hat = W.hat,
+                       clusters = X.clusters)
+
+varimp = variable_importance(cf.raw)
+selected.idx = which(varimp > mean(varimp))
+
+cf = causal_forest(X[,selected.idx], Y, W,
+                   Y.hat = Y.hat, W.hat = W.hat,
+                   clusters = X.clusters,
+                   samples_per_cluster = 10,
+                   tune.parameters = TRUE)
+
+tau.hat = predict(cf)$predictions
 ```
-# check other variables than areaid for the clusters
+
+### Confidence Interval for Average Treatment Effects
+
+```{r}
+high_effect = tau.hat > median(tau.hat)
+ate.high = average_treatment_effect(cf, subset = high_effect) 
+ate.low = average_treatment_effect(cf, subset = !high_effect) 
+
+paste("95% CI for difference in ATE:",
+round(ate.high[1] - ate.low[1], 3), "+/-",
+round(qnorm(0.975) * sqrt(ate.high[2]^2 + ate.low[2]^2), 3))
+```
+
+### Best Linear Predictor
+
+```{r}
+test_calibration(cf)
+```
+No heterogeneity. 
+
+### The Effects of `anyloan_amt_1` and `hhsize_adj_1`
+
+```{r}
+area.mat = model.matrix(~ -1 + areaid, data = train)
+area.size = colSums(area.mat)
+
+dr.score = tau.hat + W / cf$W.hat * (Y - cf$Y.hat - (1 - cf$W.hat) * tau.hat) -
+  (1 - W) / (1 - cf$W.hat) * (Y - cf$Y.hat + cf$W.hat * tau.hat)
+
+area.score = area.mat * dr.score / area.size
+```
+
+```{r}
+area.anyloan_amt = area.mat * X$anyloan_amt_1 / area.size
+high_anyloan_amt = area.anyloan_amt > median(area.anyloan_amt) 
+t.test(area.score[high_anyloan_amt], area.score[!high_anyloan_amt])
+```
+
+```{r}
+area.hhsize_adj = area.mat * X$hhsize_adj_1 / area.size
+high.hhsize_adj = area.hhsize_adj > median(area.hhsize_adj) 
+t.test(area.score[high.hhsize_adj], area.score[!high.hhsize_adj]) 
+```
+No heterogeneity along `anyloan_amt_1` and `hhsize_adj_1`. 

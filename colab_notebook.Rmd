@@ -628,7 +628,7 @@ train <- endline1_biz[idx.train, ] # training set
 test <-  endline1_biz[-idx.train, ]
 
 # train data
-y <- train$biz_index_all_1
+Y <- train$biz_index_all_1
 X <- train %>% 
   select(-treatment, -target_index)
 clusters <- train$areaid
@@ -637,16 +637,17 @@ W <- train$treatment
 # model
 forest_cluster <- causal_forest(
   model.matrix(~., data = X),
-  y,
+  Y,
   W,
   mtry = 3, num.trees = 3000)
 
 var_imp_plot(forest_cluster)
 ```
 
+
 ```{r}
 # test data
-test_y <- test$biz_index_all_1
+test_Y <- test$biz_index_all_1
 test_X <- test %>% 
   select(-treatment, -target_index)
 test_clusters <- test$areaid
@@ -662,6 +663,62 @@ test$preds <- preds$predictions
 ```{r}
 trend_plots(forest_cluster, test)
 ```
+
+
+```{r}
+Y.forest = regression_forest(X, Y, clusters = train$areaid)
+Y.hat = predict(Y.forest)$predictions
+W.forest = regression_forest(X, W, clusters = train$areaid)
+W.hat = predict(W.forest)$predictions
+
+cf.raw = causal_forest(X, Y, W,
+Y.hat = Y.hat, W.hat = W.hat,
+clusters = train$areaid) 
+
+varimp = variable_importance(cf.raw)
+selected.idx = which(varimp > mean(varimp))
+
+cf = causal_forest(X[,selected.idx], Y, W,
+Y.hat = Y.hat, W.hat = W.hat,
+clusters = train$areaid, samples_per_cluster = 10, tune.parameters = TRUE)
+
+tau.hat = predict(cf)$predictions
+```
+
+```{r}
+high_effect = tau.hat > median(tau.hat)
+ate.high = average_treatment_effect(cf, subset = high_effect) 
+ate.low = average_treatment_effect(cf, subset = !high_effect) 
+
+paste("95% CI for difference in ATE:",
+round(ate.high[1] - ate.low[1], 3), "+/-",
+round(qnorm(0.975) * sqrt(ate.high[2]^2 + ate.low[2]^2), 3))
+
+test_calibration(cf)
+```
+
+```{r}
+biz_index_mat <- model.matrix(~ areaid + 0, data = train)
+biz_index_size <- colSums(biz_index_mat)
+
+dr.score = tau.hat + W / cf$W.hat * (Y - cf$Y.hat - (1 - cf$W.hat) * tau.hat) - (1 - W) / (1 - cf$W.hat) * (Y - cf$Y.hat + cf$W.hat * tau.hat)
+
+biz_index_score = t(biz_index_mat) %*% dr.score / biz_index_size
+total_exp = t(biz_index_mat) %*% X$total_exp_mo_pc_1 / biz_index_size
+high_total_exp = total_exp > median(total_exp) 
+t.test(biz_index_score[high_total_exp], biz_index_score[!high_total_exp]) 
+
+school.X2 = (t(school.mat) %*% X$X2) / school.size 
+high.X2 = school.X2 > median(school.X2) 
+t.test(school.score[high.X2], school.score[!high.X2]) 
+
+school.X2.levels = cut(school.X2,
+breaks = c(-Inf, quantile(school.X2, c(1/3, 2/3)), Inf))
+summary(aov(school.score ~ school.X2.levels))
+```
+
+
+
 
 ## Credit Index
 ```{r}

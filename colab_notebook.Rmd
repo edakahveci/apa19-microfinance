@@ -252,7 +252,6 @@ nrow(endline1)
 
 First we want to know which column (variable) contains outliers and how many of them. Here we will use "Z-score" approach to detect outliers.
 
-
 ```{r}
 exp_col <- endline1 %>% 
   select(contains("exp_mo_pc"), contains("amt_")) %>%

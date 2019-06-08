@@ -298,7 +298,7 @@ endline1 %>%
             "Ave. Biz. Index" = mean(biz_index_all_1, na.rm = TRUE))
 ```
 
-## Dataset
+## Define The Dataset
 
 ```{r}
 target_index <- "biz_index_all_1"

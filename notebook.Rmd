@@ -1,6 +1,6 @@
 # Setup The Environment
 
-## Load The Packages And The Helper Functions
+## Load The Required Packages
 
 ```{r}
 library(readstata13)
@@ -14,9 +14,11 @@ library(grf)
 library(cowplot)
 ```
 
+## Source The Helper Functions
+
 ```{r}
 source("helpers.r")
-````
+```
 
 # Data Preparation And Exploration
 
@@ -239,10 +241,10 @@ First we want to know which column (variable) contains outliers and how many of 
 
 ```{r}
 exp_col <- endline1 %>% 
-  select(contains("exp_mo_pc"), contains("amt_")) %>%
+  select(contains("exp_mo_pc")) %>%
   colnames()
 for (covar in exp_col) {
-  covar_outlier <- scores(x = endline1[, covar], type = "iqr", lim = 3)
+  covar_outlier <- scores(x = endline1[, covar], type = "iqr", lim = 5)
   endline1 <- endline1[!covar_outlier, ]
 }
 ```
@@ -258,7 +260,7 @@ However, the fact that in the original study, they didn't collect the baseline d
 
 Because of the flaw of our datasets, we lose the ability to directly link baseline data with endlines data, hence could not perform the analysis on household-level. To mitigate this issue, we use the "index variables", which were calculated by the authors and were included in our dataset, as our target variables. And we assumed that those variables already include the information we need to analyze the causal effect.
 
-### How They Calculate The Results in The Original Paper
+## How They Calculate The Results in The Original Paper
 
 For each "target" variable, they run an weighted OLS:
 
@@ -292,7 +294,6 @@ We want to find out whether there are heterogeneous effects of  "availibility of
 
 ```{r}
 endline1 %>%
-  filter(is.na(treatment) == FALSE) %>% # exclude the observations with NA
   group_by(treatment) %>%
   summarize("Num. of Obs." = n(),
             "Ave. Biz. Index" = mean(biz_index_all_1, na.rm = TRUE))
@@ -314,7 +315,7 @@ str(endline1_biz)
 
 ## Two-Models Approach With Sorted Group Average Treatment Effects (GATES)
 
-## F-Tests
+### F-Tests
 ```{r}
 auxi_ind <- createDataPartition(y = endline1$treatment, p = 0.7, list = FALSE)
 auxi <- endline1[auxi_ind, ]
@@ -364,9 +365,7 @@ for (covar in colnames(treated)) {
 
 ```
 
-### By Random Forest
-
-#### Results (using Random Forest)
+### Results (using Random Forest)
 
 ```{r}
 tm_gates_biz <- tm_gates("biz_index_all_1", "treatment", endline1_biz,
@@ -382,7 +381,7 @@ summary(tm_gates_biz[[1]])
 summary(tm_gates_biz[[2]])
 ```
 
-#### Results (using Causal Random Forest)
+### Results (using Causal Random Forest)
 
 ```{r}
 tm_gates_biz_crf <- tm_gates("biz_index_all_1", "treatment", endline1_biz,
@@ -398,21 +397,10 @@ summary(tm_gates_biz_crf[[1]])
 summary(tm_gates_biz_crf[[2]])
 ```
 
-# CAUSAL FOREST
 
-## Business Index
+## CAUSAL RANDOM FOREST
 
 ```{r}
-target_index <- "biz_index_all_1"
-
-endline1_biz <- endline1 %>%
-  select(everything(),
-         -hhid,
-         -starts_with("biz"),
-         -contains("index"), # prevent confounding
-         target_index)       # add target index
-str(endline1_biz)
-
 # test/train
 set.seed(123)
 idx.train <- caret::createDataPartition(y = endline1_biz$treatment, p = 0.75, list = FALSE) 
@@ -435,9 +423,17 @@ forest <- causal_forest(
   mtry = 3, 
   num.trees = 3000,
   honesty = TRUE)
+```
 
+### Results: Variable Importance
+
+```{r}
 var_imp_plot(forest)
+```
 
+### Results: Trend Plots
+
+```{r}
 # test data
 test_Y <- test$biz_index_all_1
 test_X <- test %>% 
@@ -453,9 +449,7 @@ test$preds <- preds$predictions
 trend_plots(forest, test)
 ```
 
-```{r}
-forest
-```
+### Re-run The Model With Only Important Variables
 
 ```{r}
 Y.forest = regression_forest(X, Y, clusters = X.clusters)
@@ -510,13 +504,11 @@ dr.score = tau.hat + W / cf$W.hat * (Y - cf$Y.hat - (1 - cf$W.hat) * tau.hat) -
 area.score = area.mat * dr.score / area.size
 ```
 
-
 ```{r}
 area.hours_biz = area.mat * X$hours_week_biz_1/ area.size
 high_hours_biz = area.hours_biz > median(area.hours_biz) 
 t.test(area.score[high_hours_biz], area.score[!high_hours_biz])
 ```
-
 
 ```{r}
 area.total_exp = area.mat * X$total_exp_mo_pc_1 / area.size
@@ -524,14 +516,26 @@ high_total_exp = area.total_exp > median(area.total_exp)
 t.test(area.score[high_total_exp], area.score[!high_total_exp])
 ```
 
-```{r}
-area.food_exp = area.mat * X$food_exp_mo_pc_1 / area.size
-high.food_exp = area.food_exp > median(area.food_exp) 
-t.test(area.score[high.food_exp], area.score[!high.food_exp]) 
-```
 There is heterogeneity along `hours_week_biz_1` and `total_exp_mo_pc_1` with 0.05 significance.
 
-## Credit Index
+# Credit Index
+
+## Treatment & Target Variable
+
+- Treatment Variable:  `treatment`
+- Target Variable: `credit_index_1`
+
+We want to find out whether there are heterogeneous effects of  "availibility of Spandana microcredit loan" on credit of households in the area.
+
+```{r}
+endline1 %>%
+  group_by(treatment) %>%
+  summarize("Num. of Obs." = n(),
+            "Ave. Biz. Index" = mean(credit_index_1, na.rm = TRUE))
+```
+
+## Define The Dataset
+
 ```{r}
 target_index <- "credit_index_1"
 
@@ -547,7 +551,13 @@ endline1_credit <- endline1 %>%
          -contains("index"), # prevent confounding
          target_index)       # add target index
 str(endline1_credit)
+```
 
+## Two-Models Approach & Sorted Groups Average Treatment Effect
+
+## CAUSAL RANDOM FOREST
+
+```{r}
 # test/train
 set.seed(123)
 idx.train <- caret::createDataPartition(y = endline1_credit$treatment, p = 0.75, list = FALSE) 
@@ -570,9 +580,17 @@ forest <- causal_forest(
   mtry = 3, 
   num.trees = 3000,
   honesty = TRUE)
+```
 
+### Results: Variable Importance
+
+```{r}
 var_imp_plot(forest)
+```
 
+### Results: Trend Plots
+
+```{r}
 # test data
 test_Y <- test$credit_index_1
 test_X <- test %>% 
@@ -587,6 +605,8 @@ preds <- predict(
 test$preds <- preds$predictions
 trend_plots(forest, test)
 ```
+
+### Re-run The Model With Only Important Variables
 
 ```{r}
 Y.forest = regression_forest(X, Y, clusters = X.clusters)
@@ -661,8 +681,23 @@ t.test(area.score[high.nondurable_exp], area.score[!high.nondurable_exp])
 ```
 There is heterogeneity along `total_exp_mo_pc_1` and `food_exp_mo_pc_1` and `nondurable_exp_mo_pc_1`.
 
+# Consumption Index
 
-## Consumption Index
+## Treatment & Target Variable
+
+- Treatment Variable:  `treatment`
+- Target Variable: `consumption_index_1`
+
+We want to find out whether there are heterogeneous effects of  "availibility of Spandana microcredit loan" on consumption of households in the area.
+
+```{r}
+endline1 %>%
+  group_by(treatment) %>%
+  summarize("Num. of Obs." = n(),
+            "Ave. Biz. Index" = mean(consumption_index_1, na.rm = TRUE))
+```
+
+## Define The Dataset
 ```{r}
 target_index <- "consumption_index_1"
 
@@ -674,8 +709,12 @@ endline1_consumption <- endline1 %>%
          -contains("index"), # prevent confounding
          target_index)       # add target index
 str(endline1_consumption)
+```
 
+## Two-Models Approach & Sorted Groups Average Treatment Effect
 
+## CAUSAL RANDOM FOREST
+```{r}
 # test/train
 set.seed(123)
 idx.train <- caret::createDataPartition(y = endline1_consumption$treatment, p = 0.75, list = FALSE) 
@@ -698,9 +737,17 @@ forest <- causal_forest(
   mtry = 3, 
   num.trees = 3000,
   honesty = TRUE)
+```
 
+### Results: Variable Importance
+
+```{r}
 var_imp_plot(forest)
+```
 
+### Results: Trend Plots
+
+```{r}
 # test data
 test_Y <- test$consumption_index_1
 test_X <- test %>% 
@@ -715,6 +762,8 @@ preds <- predict(
 test$preds <- preds$predictions
 trend_plots(forest, test)
 ```
+
+### Re-run The Model With Only Important Variables
 
 ```{r}
 Y.forest = regression_forest(X, Y, clusters = X.clusters)

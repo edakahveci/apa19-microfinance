@@ -365,10 +365,23 @@ for (covar in colnames(treated)) {
 
 ```
 
+### Rescale The Dataset
+
+We rescale (standardize) the numeric variables before running the
+regression in order to get a clear view on how to interpret the
+results.
+
+```{r}
+preScale <- preProcess(endline1_biz[,3:(ncol(endline1_biz)-1)],
+                       method = c("scale", "center"))
+
+endline1_biz_scale <- predict(preScale, newdata = endline1_biz)
+````
+
 ### Results (using Random Forest)
 
 ```{r}
-tm_gates_biz <- tm_gates("biz_index_all_1", "treatment", endline1_biz,
+tm_gates_biz <- tm_gates("biz_index_all_1", "treatment", endline1_biz_scale,
                          split_ratio = 0.6,
                          cluster="areaid", num.iter=1, ml_method="rf")
 ```
@@ -384,7 +397,7 @@ summary(tm_gates_biz[[2]])
 ### Results (using Causal Random Forest)
 
 ```{r}
-tm_gates_biz_crf <- tm_gates("biz_index_all_1", "treatment", endline1_biz,
+tm_gates_biz_crf <- tm_gates("biz_index_all_1", "treatment", endline1_biz_scale,
                              split_ratio = 0.6,
                              cluster="areaid", num.iter=1, ml_method="crf")
 ```

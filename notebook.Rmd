@@ -397,7 +397,6 @@ summary(tm_gates_biz_crf[[1]])
 summary(tm_gates_biz_crf[[2]])
 ```
 
-
 ## CAUSAL RANDOM FOREST
 
 ```{r}
@@ -554,6 +553,22 @@ str(endline1_credit)
 ```
 
 ## Two-Models Approach & Sorted Groups Average Treatment Effect
+
+### Results (using Random Forest)
+
+```{r}
+tm_gates_credit <- tm_gates("credit_index_1", "treatment", endline1_credit,
+                            split_ratio = 0.6,
+                            cluster="areaid", num.iter=1, ml_method="rf")
+```
+
+```{r}
+summary(tm_gates_credit[[1]])
+```
+
+```{r}
+summary(tm_gates_credit[[2]])
+```
 
 ## CAUSAL RANDOM FOREST
 
@@ -712,6 +727,21 @@ str(endline1_consumption)
 ```
 
 ## Two-Models Approach & Sorted Groups Average Treatment Effect
+
+### Results: Random Forset
+```{r}
+tm_gates_cons <- tm_gates("consumption_index_1", "treatment", endline1_consumption,
+                          split_ratio = 0.6,
+                          cluster="areaid", num.iter=1, ml_method="rf")
+```
+
+```{r}
+summary(tm_gates_cons[[1]])
+```
+
+```{r}
+summary(tm_gates_cons[[2]])
+```
 
 ## CAUSAL RANDOM FOREST
 ```{r}

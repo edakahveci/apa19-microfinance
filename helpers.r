@@ -1,3 +1,7 @@
+library(readstata13)
+library(tidyverse)
+library(outliers)
+
 # Analyze The Missing Values
 na_table <- function(x) {
   na_table <- data.frame()
@@ -11,6 +15,84 @@ na_table <- function(x) {
   }
   return(na_table)
 }
+
+# Load And pre-process the dataset
+load_endline1 <- function() {
+  endlines <- read.dta13("data/2013-0533_data_endlines1and2.dta",
+                         convert.factors = FALSE,
+                         generate.factors = TRUE)
+
+  endline1 <- endlines %>%
+    filter(sample1 == 1) %>%
+    select(colnames(endlines)[1:16],
+           contains("_1"),
+           -c(w, w1, w2, sample1, sample2, visitday_1, visitmonth_1, visityear_1),
+           -starts_with("area_"),
+           -ends_with("_mo_1"),
+           -ends_with("_annual_1")) %>%
+    mutate(old_biz = ifelse(any_old_biz == 0 | is.na(any_old_biz) == TRUE,
+                            0,
+                            old_biz),
+           total_biz_1 = ifelse(any_biz_1 == 0 | is.na(any_biz_1) == TRUE,
+                                0,
+                                total_biz_1),
+           newbiz_1 = ifelse(any_new_biz_1 == 0 | is.na(any_new_biz_1) == TRUE,
+                             0,
+                             newbiz_1)) %>%
+    select(-c(any_old_biz, any_biz_1, any_new_biz_1,
+              hhsize_1,
+              anymfi_1, anymfi_amt_1,
+              hours_week_1, hours_headspouse_week_1, hours_child1620_week_1,
+              total_exp_mo_pc_1))
+
+  na_delete_threshold <- 0.1
+  na_delete_col <- (na_table(endline1) %>% filter(ratio > na_delete_threshold))[,1]
+  # delete those variables
+  for (col in na_delete_col) {
+    endline1[,col] <- NULL
+  }
+
+  endline1 <- endline1 %>%
+    mutate(bizassets_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
+                                0,
+                                bizassets_1),
+           bizinvestment_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
+                                    0,
+                                    bizinvestment_1),
+           bizrev_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
+                             0,
+                             bizrev_1),
+           bizexpense_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
+                                 0,
+                                 bizexpense_1),
+           bizprofit_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
+                                0,
+                                bizprofit_1),
+           bizemployees_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
+                                   0,
+                                   bizemployees_1))
+
+  covariates_name <- endline1 %>%
+    select(-contains("index")) %>%
+    colnames()
+  for (covar in covariates_name) {
+    endline1[is.na(endline1[, covar]), covar] <-
+      median(endline1[, covar], na.rm = TRUE)
+  }
+
+  endline1 <- na.omit(endline1)
+
+  exp_col <- endline1 %>%
+    select(contains("exp_mo_pc")) %>%
+    colnames()
+  for (covar in exp_col) {
+    covar_outlier <- scores(x = endline1[, covar], type = "iqr", lim = 5)
+    endline1 <- endline1[!covar_outlier, ]
+  }
+
+  return(endline1)
+}
+
 
 # Two-models Approach (with Sorted Groups ATE)
 ## This function contains two parts.

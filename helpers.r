@@ -138,14 +138,14 @@ tm_gates <- function(target, treatment, data,
       # we use only the control group to fit a model that predicts the baseline value
       auxi_yi0 <- randomForest(auxi_formula,
                                data = auxi_contr,
-                               ntree = 3000,
+                               ntree = 1000,
                                mtry = 3,
                                replace = TRUE,
                                type = "regression")
       # and use only the treatment group to fit a model that predict the treated value
       auxi_yi1 <- randomForest(auxi_formula,
                                data = auxi_treat,
-                               ntree = 3000,
+                               ntree = 1000,
                                mtry = 3,
                                replace = TRUE,
                                type = "regression")

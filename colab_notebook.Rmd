@@ -1,3 +1,8 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
 # Setup The Environment
 
 ## Load The Packages
@@ -254,10 +259,10 @@ First we want to know which column (variable) contains outliers and how many of 
 
 ```{r}
 exp_col <- endline1 %>% 
-  select(contains("exp_mo_pc"), contains("amt_")) %>%
+  select(contains("consumption_index_1")) %>%
   colnames()
 for (covar in exp_col) {
-  covar_outlier <- scores(x = endline1[, covar], type = "iqr", lim = 3)
+  covar_outlier <- scores(x = endline1[, covar], type = "iqr", lim = 10)
   endline1 <- endline1[!covar_outlier, ]
 }
 ```
@@ -279,7 +284,7 @@ For each "target" variable, they run an weighted OLS:
 
 $y_{ia} = \alpha + \beta * Treatment_a + X'\gamma + \epsilon_{ia}$
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 spandana_amt <- felm(spandana_amt_1 ~ 1 + treatment + area_pop_base + 
                      area_business_total_base + area_exp_pc_mean_base + 
                      area_literate_head_base + area_literate_base + 
@@ -330,8 +335,8 @@ str(endline1_biz)
 ## Two-Models Approach With Sorted Group Average Treatment Effects (GATES)
 
 ## F-Tests
-```{r}
-auxi_ind <- createDataPartition(y = endline1$treatment, p = 0.7, list = FALSE)
+```{r eval=FALSE, include=FALSE}
+# auxi_ind <- createDataPartition(y = endline1$treatment, p = 0.7, list = FALSE)
 auxi <- endline1[auxi_ind, ]
 main <- endline1[-auxi_ind,]
 
@@ -617,9 +622,28 @@ trend_plots <- function(crf, test) {
     geom_smooth(method = "loess", span = 1) +
     theme_light() +
     labs(x = var_imp$variable[4], y = "pred. CTE")
-
+  p5 <- ggplot(test, aes(x = test[, var_imp$variable[5]], y = preds)) +
+    geom_point() +
+    geom_smooth(method = "loess", span = 1) +
+    theme_light() +
+    labs(x = var_imp$variable[5], y = "pred. CTE")
+  p6 <- ggplot(test, aes(x = test[, var_imp$variable[6]], y = preds)) +
+    geom_point() +
+    geom_smooth(method = "loess", span = 1) +
+    theme_light() +
+    labs(x = var_imp$variable[6], y = "pred. CTE")
+  p7 <- ggplot(test, aes(x = test[, var_imp$variable[7]], y = preds)) +
+    geom_point() +
+    geom_smooth(method = "loess", span = 1) +
+    theme_light() +
+    labs(x = var_imp$variable[7], y = "pred. CTE")
+  p8 <- ggplot(test, aes(x = test[, var_imp$variable[8]], y = preds)) +
+    geom_point() +
+    geom_smooth(method = "loess", span = 1) +
+    theme_light() +
+    labs(x = var_imp$variable[8], y = "pred. CTE")
   # combine those plots
-  cowplot::plot_grid(p1, p2, p3, p4, ncol = 2)
+  cowplot::plot_grid(p1, p2, p3, p4, p5, p6, p7, p8, ncol = 2)
 }
 ```
 
@@ -629,12 +653,15 @@ trend_plots <- function(crf, test) {
 target_index <- "biz_index_all_1"
 
 endline1_biz <- endline1 %>%
+  filter (old_biz != 0 | newbiz_1 !=0) %>%
   select(everything(),
          -hhid,
          -starts_with("biz"),
+         -total_exp_mo_pc_1,
          -contains("index"), # prevent confounding
          target_index)       # add target index
 str(endline1_biz)
+
 
 # test/train
 set.seed(123)
@@ -676,9 +703,22 @@ test$preds <- preds$predictions
 trend_plots(forest, test)
 ```
 
+# JUST TRYING
 ```{r}
-forest
+target_index <- "biz_index_all_1"
+
+endline1_fixed <- endline1[,1:15]
+endline1_index <- endline1 %>%
+  select(contains("index"))
+
+endline1_biz <- cbind(endline1_fixed, endline1_index)
+
+endline1_biz$hhid <- NULL
+
+str(endline1_biz)
+
 ```
+
 
 
 ```{r}
@@ -812,6 +852,8 @@ test$preds <- preds$predictions
 trend_plots(forest, test)
 ```
 
+
+
 ```{r}
 Y.forest = regression_forest(X, Y, clusters = X.clusters)
 Y.hat = predict(Y.forest)$predictions
@@ -939,6 +981,11 @@ preds <- predict(
 test$preds <- preds$predictions
 trend_plots(forest, test)
 ```
+```{r}
+
+```
+
+
 
 ```{r}
 Y.forest = regression_forest(X, Y, clusters = X.clusters)

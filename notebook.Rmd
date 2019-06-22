@@ -521,6 +521,13 @@ trend_plots <- function(crf, test) {
   cowplot::plot_grid(p1, p2, p3, p4, p5, p6, p7, p8, ncol = 2)
 }
 ```
+```{r}
+endline1 %>%
+  select(
+    contains("amt")
+  )
+```
+
 
 ## Business Index
 
@@ -528,21 +535,17 @@ trend_plots <- function(crf, test) {
 target_index <- "biz_index_all_1"
 
 endline1_biz <- endline1 %>%
-  filter (old_biz != 0 | newbiz_1 !=0) %>%
+  filter(total_biz_1 != 0) %>%
   select(everything(),
          -hhid,
-         -starts_with("biz"),
+         -contains("biz"),
          -total_exp_mo_pc_1,
-         -contains("index"), # prevent confounding
+         -contains("index"),
+         # prevent confounding
          target_index)       # add target index
 str(endline1_biz)
 
-
-=======
-## CAUSAL RANDOM FOREST
-
-```{r}
->>>>>>> f85a5f3681b39436cb717a86a8949ed91497cdb0:notebook.Rmd
+endline1_biz$biz_index_all_1 <- ifelse(endline1_biz$biz_index_all_1<0, 0, 1)
 # test/train
 set.seed(123)
 idx.train <- caret::createDataPartition(y = endline1_biz$treatment, p = 0.75, list = FALSE) 
@@ -565,17 +568,9 @@ forest <- causal_forest(
   mtry = 3, 
   num.trees = 3000,
   honesty = TRUE)
-```
 
-### Results: Variable Importance
-
-```{r}
 var_imp_plot(forest)
-```
 
-### Results: Trend Plots
-
-```{r}
 # test data
 test_Y <- test$biz_index_all_1
 test_X <- test %>% 
@@ -591,27 +586,65 @@ test$preds <- preds$predictions
 trend_plots(forest, test)
 ```
 
-<<<<<<< HEAD:colab_notebook.Rmd
-# JUST TRYING
+```{r}
+test <- cbind(test, preds)
+table <- QiniTable(test, "treatment", "biz_index_all_1", "predictions")
+table
+QiniCurve(table)
+```
+
 ```{r}
 target_index <- "biz_index_all_1"
 
-endline1_fixed <- endline1[,1:15]
-endline1_index <- endline1 %>%
-  select(contains("index"))
+endline1_biz <- endline1[1:15]
+biz_index_all_1 <- endline1$biz_index_all_1
+endline1_biz <- cbind(endline1_biz, biz_index_all_1)
 
-endline1_biz <- cbind(endline1_fixed, endline1_index)
 
-endline1_biz$hhid <- NULL
+# test/train
+set.seed(123)
+idx.train <- caret::createDataPartition(y = endline1_biz$treatment, p = 0.75, list = FALSE) 
+train <- endline1_biz[idx.train, ] # training set
+test <-  endline1_biz[-idx.train, ]
 
-str(endline1_biz)
+# train data
+Y <- train$biz_index_all_1
+X <- train %>% 
+  select(-treatment, -target_index, -areaid, -hhid)
+X.clusters <- train$areaid
+W <- train$treatment
 
+# model
+forest <- causal_forest(
+  model.matrix(~., data = X),
+  Y,
+  W,
+  clusters = X.clusters,
+  mtry = 3, 
+  num.trees = 3000,
+  honesty = TRUE)
+
+var_imp_plot(forest)
+
+# test data
+test_Y <- test$biz_index_all_1
+test_X <- test %>% 
+  select(-treatment, -target_index, -areaid)
+test_clusters <- test$areaid
+test_W <- test$treatment
+
+# prediction
+preds <- predict(
+  object = forest,
+  newdata = model.matrix(~ ., data = test_X, estimate.variance = TRUE))
+test$preds <- preds$predictions
+trend_plots(forest, test)
 ```
 
-=======
-### Re-run The Model With Only Important Variables
->>>>>>> f85a5f3681b39436cb717a86a8949ed91497cdb0:notebook.Rmd
 
+```{r}
+str(endline1_biz)
+```
 
 ```{r}
 Y.forest = regression_forest(X, Y, clusters = X.clusters)
@@ -666,11 +699,13 @@ dr.score = tau.hat + W / cf$W.hat * (Y - cf$Y.hat - (1 - cf$W.hat) * tau.hat) -
 area.score = area.mat * dr.score / area.size
 ```
 
+
 ```{r}
 area.hours_biz = area.mat * X$hours_week_biz_1/ area.size
 high_hours_biz = area.hours_biz > median(area.hours_biz) 
 t.test(area.score[high_hours_biz], area.score[!high_hours_biz])
 ```
+
 
 ```{r}
 area.total_exp = area.mat * X$total_exp_mo_pc_1 / area.size
@@ -678,26 +713,16 @@ high_total_exp = area.total_exp > median(area.total_exp)
 t.test(area.score[high_total_exp], area.score[!high_total_exp])
 ```
 
+```{r}
+area.food_exp = area.mat * X$food_exp_mo_pc_1 / area.size
+high.food_exp = area.food_exp > median(area.food_exp) 
+t.test(area.score[high.food_exp], area.score[!high.food_exp]) 
+```
 There is heterogeneity along `hours_week_biz_1` and `total_exp_mo_pc_1` with 0.05 significance.
 
-# Credit Index
 
-## Treatment & Target Variable
 
-- Treatment Variable:  `treatment`
-- Target Variable: `credit_index_1`
-
-We want to find out whether there are heterogeneous effects of  "availibility of Spandana microcredit loan" on credit of households in the area.
-
-```{r}
-endline1 %>%
-  group_by(treatment) %>%
-  summarize("Num. of Obs." = n(),
-            "Ave. Biz. Index" = mean(credit_index_1, na.rm = TRUE))
-```
-
-## Define The Dataset
-
+## Credit Index
 ```{r}
 target_index <- "credit_index_1"
 
@@ -713,29 +738,9 @@ endline1_credit <- endline1 %>%
          -contains("index"), # prevent confounding
          target_index)       # add target index
 str(endline1_credit)
-```
 
-## Two-Models Approach & Sorted Groups Average Treatment Effect
+endline1_biz$biz_index_all_1 <- ifelse(endline1_biz$biz_index_all_1<0, 0, 1)
 
-### Results (using Random Forest)
-
-```{r}
-tm_gates_credit <- tm_gates("credit_index_1", "treatment", endline1_credit,
-                            split_ratio = 0.6,
-                            cluster="areaid", num.iter=1, ml_method="rf")
-```
-
-```{r}
-summary(tm_gates_credit[[1]])
-```
-
-```{r}
-summary(tm_gates_credit[[2]])
-```
-
-## CAUSAL RANDOM FOREST
-
-```{r}
 # test/train
 set.seed(123)
 idx.train <- caret::createDataPartition(y = endline1_credit$treatment, p = 0.75, list = FALSE) 
@@ -758,17 +763,9 @@ forest <- causal_forest(
   mtry = 3, 
   num.trees = 3000,
   honesty = TRUE)
-```
 
-### Results: Variable Importance
-
-```{r}
 var_imp_plot(forest)
-```
 
-### Results: Trend Plots
-
-```{r}
 # test data
 test_Y <- test$credit_index_1
 test_X <- test %>% 
@@ -784,11 +781,12 @@ test$preds <- preds$predictions
 trend_plots(forest, test)
 ```
 
-<<<<<<< HEAD:colab_notebook.Rmd
-
-=======
-### Re-run The Model With Only Important Variables
->>>>>>> f85a5f3681b39436cb717a86a8949ed91497cdb0:notebook.Rmd
+```{r}
+test <- cbind(test, preds)
+table <- QiniTable(test, "treatment", "credit_index_all_1", "predictions")
+table
+QiniCurve(table)
+```
 
 ```{r}
 Y.forest = regression_forest(X, Y, clusters = X.clusters)
@@ -863,23 +861,8 @@ t.test(area.score[high.nondurable_exp], area.score[!high.nondurable_exp])
 ```
 There is heterogeneity along `total_exp_mo_pc_1` and `food_exp_mo_pc_1` and `nondurable_exp_mo_pc_1`.
 
-# Consumption Index
 
-## Treatment & Target Variable
-
-- Treatment Variable:  `treatment`
-- Target Variable: `consumption_index_1`
-
-We want to find out whether there are heterogeneous effects of  "availibility of Spandana microcredit loan" on consumption of households in the area.
-
-```{r}
-endline1 %>%
-  group_by(treatment) %>%
-  summarize("Num. of Obs." = n(),
-            "Ave. Biz. Index" = mean(consumption_index_1, na.rm = TRUE))
-```
-
-## Define The Dataset
+## Consumption Index
 ```{r}
 target_index <- "consumption_index_1"
 
@@ -891,27 +874,8 @@ endline1_consumption <- endline1 %>%
          -contains("index"), # prevent confounding
          target_index)       # add target index
 str(endline1_consumption)
-```
 
-## Two-Models Approach & Sorted Groups Average Treatment Effect
 
-### Results: Random Forset
-```{r}
-tm_gates_cons <- tm_gates("consumption_index_1", "treatment", endline1_consumption,
-                          split_ratio = 0.6,
-                          cluster="areaid", num.iter=1, ml_method="rf")
-```
-
-```{r}
-summary(tm_gates_cons[[1]])
-```
-
-```{r}
-summary(tm_gates_cons[[2]])
-```
-
-## CAUSAL RANDOM FOREST
-```{r}
 # test/train
 set.seed(123)
 idx.train <- caret::createDataPartition(y = endline1_consumption$treatment, p = 0.75, list = FALSE) 
@@ -934,17 +898,9 @@ forest <- causal_forest(
   mtry = 3, 
   num.trees = 3000,
   honesty = TRUE)
-```
 
-### Results: Variable Importance
-
-```{r}
 var_imp_plot(forest)
-```
 
-### Results: Trend Plots
-
-```{r}
 # test data
 test_Y <- test$consumption_index_1
 test_X <- test %>% 
@@ -959,13 +915,9 @@ preds <- predict(
 test$preds <- preds$predictions
 trend_plots(forest, test)
 ```
-```{r}
-
-```
 
 
 
-### Re-run The Model With Only Important Variables
 
 ```{r}
 Y.forest = regression_forest(X, Y, clusters = X.clusters)

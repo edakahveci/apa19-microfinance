@@ -5,7 +5,7 @@ output:
 ---
 # Setup The Environment
 
-## Load The Packages
+## Load The Required Packages
 
 ```{r}
 library(readstata13)
@@ -17,6 +17,12 @@ library(randomForest)
 library(lfe)
 library(grf)
 library(cowplot)
+```
+
+## Source The Helper Functions
+
+```{r}
+source("helpers.r")
 ```
 
 # Data Preparation And Exploration
@@ -115,7 +121,6 @@ endline1 %>%
 endline1$hhsize_1 <- NULL
 ```
 
-
 ### Loan-related Variables
 
 ```{r}
@@ -172,22 +177,6 @@ We will first delete the covariates that contains a huge amount of missing value
 First we need to find out which variable contains unreasonable amount of missing value.
 
 ```{r}
-na_table <- function(x) {
-  na_table <- data.frame()
-  for (i in 1:ncol(x)) {
-    n_na <- nrow(x[is.na(x[,i]),])
-    na_ratio <- n_na / nrow(x)
-    na_table[i, 1] <- colnames(x)[[i]]
-    na_table[i, 2] <- n_na
-    na_table[i, 3] <- na_ratio
-    colnames(na_table) <- c("covariate", "n", "ratio")
-  }
-  return(na_table)
-}
-```
-
-
-```{r}
 # set the threshold of na ratio
 na_delete_threshold <- 0.1
 na_table(endline1) %>% filter(ratio > na_delete_threshold)
@@ -203,7 +192,6 @@ for (col in na_delete_col) {
   endline1[,col] <- NULL
 }
 ```
-
 
 ### Filling The Missing Values - Business-related Variables
 
@@ -252,17 +240,23 @@ endline1 <- na.omit(endline1)
 nrow(endline1)
 ```
 
-
 ## Outliers
 
 First we want to know which column (variable) contains outliers and how many of them. Here we will use "Z-score" approach to detect outliers.
 
 ```{r}
 exp_col <- endline1 %>% 
+<<<<<<< HEAD:colab_notebook.Rmd
   select(contains("consumption_index_1")) %>%
   colnames()
 for (covar in exp_col) {
   covar_outlier <- scores(x = endline1[, covar], type = "iqr", lim = 10)
+=======
+  select(contains("exp_mo_pc")) %>%
+  colnames()
+for (covar in exp_col) {
+  covar_outlier <- scores(x = endline1[, covar], type = "iqr", lim = 5)
+>>>>>>> f85a5f3681b39436cb717a86a8949ed91497cdb0:notebook.Rmd
   endline1 <- endline1[!covar_outlier, ]
 }
 ```
@@ -278,7 +272,7 @@ However, the fact that in the original study, they didn't collect the baseline d
 
 Because of the flaw of our datasets, we lose the ability to directly link baseline data with endlines data, hence could not perform the analysis on household-level. To mitigate this issue, we use the "index variables", which were calculated by the authors and were included in our dataset, as our target variables. And we assumed that those variables already include the information we need to analyze the causal effect.
 
-### How They Calculate The Results in The Original Paper
+## How They Calculate The Results in The Original Paper
 
 For each "target" variable, they run an weighted OLS:
 
@@ -312,13 +306,12 @@ We want to find out whether there are heterogeneous effects of  "availibility of
 
 ```{r}
 endline1 %>%
-  filter(is.na(treatment) == FALSE) %>% # exclude the observations with NA
   group_by(treatment) %>%
   summarize("Num. of Obs." = n(),
             "Ave. Biz. Index" = mean(biz_index_all_1, na.rm = TRUE))
 ```
 
-## Dataset
+## Define The Dataset
 
 ```{r}
 target_index <- "biz_index_all_1"
@@ -334,9 +327,15 @@ str(endline1_biz)
 
 ## Two-Models Approach With Sorted Group Average Treatment Effects (GATES)
 
+<<<<<<< HEAD:colab_notebook.Rmd
 ## F-Tests
 ```{r eval=FALSE, include=FALSE}
 # auxi_ind <- createDataPartition(y = endline1$treatment, p = 0.7, list = FALSE)
+=======
+### F-Tests
+```{r}
+auxi_ind <- createDataPartition(y = endline1$treatment, p = 0.7, list = FALSE)
+>>>>>>> f85a5f3681b39436cb717a86a8949ed91497cdb0:notebook.Rmd
 auxi <- endline1[auxi_ind, ]
 main <- endline1[-auxi_ind,]
 
@@ -384,148 +383,23 @@ for (covar in colnames(treated)) {
 
 ```
 
-### By Random Forest
+### Rescale The Dataset
+
+We rescale (standardize) the numeric variables before running the
+regression in order to get a clear view on how to interpret the
+results.
 
 ```{r}
-tm_gates <- function(target, treatment, data, 
-                     split_ratio=0.5, cluster=0, num.iter=100, 
-                     ml_method="rf") {
-  
-  # a list to store the regression results
-  results <- list()
-  
-  # TODO implement user specified num.groups
-  num.groups <- 5
-  
-  if (cluster != 0) {
-    strati_target <- cluster
-  } else {
-    strati_target <- treatment
-  }
-  
-  for (i in 1:num.iter) {
-    # set seed for reproduction
-    set.seed(i)
-  
-    # seperate auxi and main sample  
-    auxi_index <- createDataPartition(data[,strati_target],
-                                      p = split_ratio, 
-                                      list = FALSE)
-    auxi <- data[auxi_index, ]
-    main <- data[-auxi_index,]
-  
-    # seperate treatment & control in the auxiliary sample
-    auxi_treat_index <- which(auxi[,treatment] == 1)
-    auxi_treat <- auxi[auxi_treat_index, ]
-    auxi_contr <- auxi[-auxi_treat_index,]
+preScale <- preProcess(endline1_biz[,3:(ncol(endline1_biz)-1)],
+                       method = c("scale", "center"))
 
-    # use the specified machine learning method to predict the conditional treatment effect
-    if (ml_method == "rf") {
-      # fit a random forest on auxi_treat and auxi_contr
-      auxi_formula <- as.formula(paste(target, " ~ .", "-", treatment))
-      auxi_yi0 <- randomForest(auxi_formula,
-                               data = auxi_contr,
-                               ntree = 3000,
-                               mtry = 3,
-                               replace = TRUE,
-                               type = "regression")
-      auxi_yi1 <- randomForest(auxi_formula,
-                               data = auxi_treat,
-                               ntree = 3000,
-                               mtry = 3,
-                               replace = TRUE,
-                               type = "regression")
-      # predict the baseline effect and conditional treatment effect on main sample
-      main_yi0 <- predict(auxi_yi0, newdata = main)
-      main_yi1 <- predict(auxi_yi1, newdata = main)
-      main$baseline <- main_yi0
-      main$cte <- (main_yi1 - main_yi0)
-    } else if (ml_method == "crf") {
-      # fit a causal random forest on auxi sample
-      auxi_X <- auxi %>%
-        select(everything(), -target, -treatment)
-      auxi_Y <- auxi[, target]
-      auxi_W <- auxi[, treatment]
-      auxi_crf <- causal_forest(X = auxi_X,
-                                Y = auxi_Y,
-                                W = auxi_W,
-                                honesty = TRUE,
-                                mtry = 3,
-                                num.trees = 3000)
-      # predict the conditional treatment effect on main sample
-      auxi_crf_pred <- predict(auxi_crf, newdata = main)
-      main$cte <- auxi_crf_pred$predictions
-    }
-    
-    # TWO-MODELS APPROACH
-    # Fit regression on conditional treatment effect
-    tm_exclude_col <- c(target, treatment, cluster,
-                        "baseline", "cte")
-    data_col <- names(main)
-    tm_formula <- as.formula(
-      paste(
-        "cte", "~",
-        paste(data_col[!data_col %in% tm_exclude_col], collapse = " + ")))
-  
-    tm_model <- felm(tm_formula,
-                     data = main,
-                     weights = main$weight)
-    
-    results[[i]] <- tm_model
-    
-    # SORTED GROUP AVERAGE TREATMENT EFFECT
-    # calculate propensity score (treated/all)    
-    # TODO implement option to use non-randomized treatment assignment
-    prop_score <- nrow(data[data$treatment == 1, ])/nrow(data)      
-    main$prop_score <- prop_score
-    
-    # divide observations based on their predicted conditional treatment effect  
-    breaks <- quantile(main$cte, seq(0,1, 1/num.groups), include.lowest = TRUE)
-    breaks[1] <- breaks[1] - 0.001
-    breaks[6] <- breaks[6] + 0.001
-    main$treat_group <- cut(main$cte, breaks = breaks)
-  
-    # calculate the propensity score offset for each observation in main sample
-    main$prop_offset <- main$treatment - main$prop_score
-  
-    # construct matrix from each observation's group factor
-    SGX <- model.matrix(~-1+main$treat_group)
-    # construct D-p(X)*1(G_k) and weight for each observation
-    DSG <- data.frame(main$prop_offset*SGX)
-    colnames(DSG) <- c("G1", "G2", "G3", "G4", "G5")
-    main[,c("G1", "G2", "G3", "G4", "G5", "weight")] <- cbind(
-      DSG$G1, DSG$G2, DSG$G3, DSG$G4, DSG$G5,
-      1/prop_score*(1-prop_score))
-  
-    # fit weighted ols
-    if (ml_method == "rf") {
-      gates_formula <- as.formula(paste(target,
-                                        "~",
-                                        "-1+baseline+cte+G1+G2+G3+G4+G5",
-                                        "|0|0|",
-                                        cluster))
-    } else if (ml_method == "crf") {
-      gates_formula <- as.formula(paste(target,
-                                        "~",
-                                        "cte+G1+G2+G3+G4+G5",
-                                        "|0|0|",
-                                        cluster))
-    }
+endline1_biz_scale <- predict(preScale, newdata = endline1_biz)
+````
 
-    gates_model <- felm(gates_formula,
-                        data = main,
-                        weights = main$weight)
-
-    results[[num.iter+i]] <- gates_model
-  }
-  return(results)
-}
-```
-
-#### Results (using Random Forest)
+### Results (using Random Forest)
 
 ```{r}
-tm_gates_biz <- tm_gates("biz_index_all_1", "treatment", endline1_biz,
+tm_gates_biz <- tm_gates("biz_index_all_1", "treatment", endline1_biz_scale,
                          split_ratio = 0.6,
                          cluster="areaid", num.iter=1, ml_method="rf")
 ```
@@ -538,10 +412,10 @@ summary(tm_gates_biz[[1]])
 summary(tm_gates_biz[[2]])
 ```
 
-#### Results (using Causal Random Forest)
+### Results (using Causal Random Forest)
 
 ```{r}
-tm_gates_biz_crf <- tm_gates("biz_index_all_1", "treatment", endline1_biz,
+tm_gates_biz_crf <- tm_gates("biz_index_all_1", "treatment", endline1_biz_scale,
                              split_ratio = 0.6,
                              cluster="areaid", num.iter=1, ml_method="crf")
 ```
@@ -554,6 +428,7 @@ summary(tm_gates_biz_crf[[1]])
 summary(tm_gates_biz_crf[[2]])
 ```
 
+<<<<<<< HEAD:colab_notebook.Rmd
 # CAUSAL FOREST
 
 ## Var_imp_plot function
@@ -663,6 +538,11 @@ endline1_biz <- endline1 %>%
 str(endline1_biz)
 
 
+=======
+## CAUSAL RANDOM FOREST
+
+```{r}
+>>>>>>> f85a5f3681b39436cb717a86a8949ed91497cdb0:notebook.Rmd
 # test/train
 set.seed(123)
 idx.train <- caret::createDataPartition(y = endline1_biz$treatment, p = 0.75, list = FALSE) 
@@ -685,9 +565,17 @@ forest <- causal_forest(
   mtry = 3, 
   num.trees = 3000,
   honesty = TRUE)
+```
 
+### Results: Variable Importance
+
+```{r}
 var_imp_plot(forest)
+```
 
+### Results: Trend Plots
+
+```{r}
 # test data
 test_Y <- test$biz_index_all_1
 test_X <- test %>% 
@@ -703,6 +591,7 @@ test$preds <- preds$predictions
 trend_plots(forest, test)
 ```
 
+<<<<<<< HEAD:colab_notebook.Rmd
 # JUST TRYING
 ```{r}
 target_index <- "biz_index_all_1"
@@ -719,6 +608,9 @@ str(endline1_biz)
 
 ```
 
+=======
+### Re-run The Model With Only Important Variables
+>>>>>>> f85a5f3681b39436cb717a86a8949ed91497cdb0:notebook.Rmd
 
 
 ```{r}
@@ -774,13 +666,11 @@ dr.score = tau.hat + W / cf$W.hat * (Y - cf$Y.hat - (1 - cf$W.hat) * tau.hat) -
 area.score = area.mat * dr.score / area.size
 ```
 
-
 ```{r}
 area.hours_biz = area.mat * X$hours_week_biz_1/ area.size
 high_hours_biz = area.hours_biz > median(area.hours_biz) 
 t.test(area.score[high_hours_biz], area.score[!high_hours_biz])
 ```
-
 
 ```{r}
 area.total_exp = area.mat * X$total_exp_mo_pc_1 / area.size
@@ -788,14 +678,26 @@ high_total_exp = area.total_exp > median(area.total_exp)
 t.test(area.score[high_total_exp], area.score[!high_total_exp])
 ```
 
-```{r}
-area.food_exp = area.mat * X$food_exp_mo_pc_1 / area.size
-high.food_exp = area.food_exp > median(area.food_exp) 
-t.test(area.score[high.food_exp], area.score[!high.food_exp]) 
-```
 There is heterogeneity along `hours_week_biz_1` and `total_exp_mo_pc_1` with 0.05 significance.
 
-## Credit Index
+# Credit Index
+
+## Treatment & Target Variable
+
+- Treatment Variable:  `treatment`
+- Target Variable: `credit_index_1`
+
+We want to find out whether there are heterogeneous effects of  "availibility of Spandana microcredit loan" on credit of households in the area.
+
+```{r}
+endline1 %>%
+  group_by(treatment) %>%
+  summarize("Num. of Obs." = n(),
+            "Ave. Biz. Index" = mean(credit_index_1, na.rm = TRUE))
+```
+
+## Define The Dataset
+
 ```{r}
 target_index <- "credit_index_1"
 
@@ -811,7 +713,29 @@ endline1_credit <- endline1 %>%
          -contains("index"), # prevent confounding
          target_index)       # add target index
 str(endline1_credit)
+```
 
+## Two-Models Approach & Sorted Groups Average Treatment Effect
+
+### Results (using Random Forest)
+
+```{r}
+tm_gates_credit <- tm_gates("credit_index_1", "treatment", endline1_credit,
+                            split_ratio = 0.6,
+                            cluster="areaid", num.iter=1, ml_method="rf")
+```
+
+```{r}
+summary(tm_gates_credit[[1]])
+```
+
+```{r}
+summary(tm_gates_credit[[2]])
+```
+
+## CAUSAL RANDOM FOREST
+
+```{r}
 # test/train
 set.seed(123)
 idx.train <- caret::createDataPartition(y = endline1_credit$treatment, p = 0.75, list = FALSE) 
@@ -834,9 +758,17 @@ forest <- causal_forest(
   mtry = 3, 
   num.trees = 3000,
   honesty = TRUE)
+```
 
+### Results: Variable Importance
+
+```{r}
 var_imp_plot(forest)
+```
 
+### Results: Trend Plots
+
+```{r}
 # test data
 test_Y <- test$credit_index_1
 test_X <- test %>% 
@@ -852,7 +784,11 @@ test$preds <- preds$predictions
 trend_plots(forest, test)
 ```
 
+<<<<<<< HEAD:colab_notebook.Rmd
 
+=======
+### Re-run The Model With Only Important Variables
+>>>>>>> f85a5f3681b39436cb717a86a8949ed91497cdb0:notebook.Rmd
 
 ```{r}
 Y.forest = regression_forest(X, Y, clusters = X.clusters)
@@ -927,8 +863,23 @@ t.test(area.score[high.nondurable_exp], area.score[!high.nondurable_exp])
 ```
 There is heterogeneity along `total_exp_mo_pc_1` and `food_exp_mo_pc_1` and `nondurable_exp_mo_pc_1`.
 
+# Consumption Index
 
-## Consumption Index
+## Treatment & Target Variable
+
+- Treatment Variable:  `treatment`
+- Target Variable: `consumption_index_1`
+
+We want to find out whether there are heterogeneous effects of  "availibility of Spandana microcredit loan" on consumption of households in the area.
+
+```{r}
+endline1 %>%
+  group_by(treatment) %>%
+  summarize("Num. of Obs." = n(),
+            "Ave. Biz. Index" = mean(consumption_index_1, na.rm = TRUE))
+```
+
+## Define The Dataset
 ```{r}
 target_index <- "consumption_index_1"
 
@@ -940,8 +891,27 @@ endline1_consumption <- endline1 %>%
          -contains("index"), # prevent confounding
          target_index)       # add target index
 str(endline1_consumption)
+```
 
+## Two-Models Approach & Sorted Groups Average Treatment Effect
 
+### Results: Random Forset
+```{r}
+tm_gates_cons <- tm_gates("consumption_index_1", "treatment", endline1_consumption,
+                          split_ratio = 0.6,
+                          cluster="areaid", num.iter=1, ml_method="rf")
+```
+
+```{r}
+summary(tm_gates_cons[[1]])
+```
+
+```{r}
+summary(tm_gates_cons[[2]])
+```
+
+## CAUSAL RANDOM FOREST
+```{r}
 # test/train
 set.seed(123)
 idx.train <- caret::createDataPartition(y = endline1_consumption$treatment, p = 0.75, list = FALSE) 
@@ -964,9 +934,17 @@ forest <- causal_forest(
   mtry = 3, 
   num.trees = 3000,
   honesty = TRUE)
+```
 
+### Results: Variable Importance
+
+```{r}
 var_imp_plot(forest)
+```
 
+### Results: Trend Plots
+
+```{r}
 # test data
 test_Y <- test$consumption_index_1
 test_X <- test %>% 
@@ -986,6 +964,8 @@ trend_plots(forest, test)
 ```
 
 
+
+### Re-run The Model With Only Important Variables
 
 ```{r}
 Y.forest = regression_forest(X, Y, clusters = X.clusters)

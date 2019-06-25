@@ -256,7 +256,8 @@ var_imp_plot <- function(forest, decay.exponent = 2L, max.depth = 4L) {
   df <- tibble(Variable = var.names,
                Importance = as.numeric(var.importance)) %>%
     arrange(Importance) %>%
-    mutate(Variable = factor(Variable, levels = unique(Variable)))
+    mutate(Variable = factor(Variable, levels = unique(Variable))) %>%
+    tail(20)
 
   # Plot results
   p <- ggplot(df, aes(Variable, Importance)) +

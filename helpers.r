@@ -102,9 +102,19 @@ tm_gates <- function(target, treatment, data,
 
   # a list to store the results
   results <- list()
+  results_gates <- data.frame(matrix(NA, ncol = 15, nrow = num.iter))
+  results_gates_durable_exp <- data.frame((matrix(NA, ncol = 5, nrow = num.iter)))
+  results_gates_anyloan_exp <- data.frame((matrix(NA, ncol = 5, nrow = num.iter)))
+  results_gates_nondura_exp <- data.frame((matrix(NA, ncol = 5, nrow = num.iter)))
+  results_gates_food_exp <- data.frame((matrix(NA, ncol = 5, nrow = num.iter)))
+  results_gates_health_exp <- data.frame((matrix(NA, ncol = 5, nrow = num.iter)))
+  results_gates_hhsize_adj <- data.frame((matrix(NA, ncol = 5, nrow = num.iter)))
+  results_gates_head_age <- data.frame((matrix(NA, ncol = 5, nrow = num.iter)))
+  results_bp <- data.frame((matrix(NA, ncol = 3, nrow = num.iter)))
 
   # TODO implement user specified num.groups
   num.groups <- 5
+  alpha <- 0.05
 
   if (cluster != 0) {
     strati_target <- cluster
@@ -141,14 +151,14 @@ tm_gates <- function(target, treatment, data,
                                ntree = 1000,
                                mtry = 3,
                                replace = TRUE,
-                               type = "regression")
+                               type="regression")
       # and use only the treatment group to fit a model that predict the treated value
       auxi_yi1 <- randomForest(auxi_formula,
                                data = auxi_treat,
                                ntree = 1000,
                                mtry = 3,
                                replace = TRUE,
-                               type = "regression")
+                               type="regression")
       # predict the baseline and treated value on main sample
       main_yi0 <- predict(auxi_yi0, newdata = main)
       main_yi1 <- predict(auxi_yi1, newdata = main)
@@ -175,17 +185,15 @@ tm_gates <- function(target, treatment, data,
 
     # 1. TWO-MODELS APPROACH
     # Fit regression on conditional treatment effect
-    tm_exclude_col <- c(target, treatment, cluster,
-                        "baseline", "cte")
-    data_col <- names(main)
-    tm_formula <- as.formula(
-      paste(
-        "cte", "~",
-        paste(data_col[!data_col %in% tm_exclude_col], collapse = " + ")))
+    #tm_exclude_col <- c(target, treatment, cluster,
+    #                    "baseline", "cte")
+    #data_col <- names(main)
+    #tm_formula <- as.formula(
+    #  paste(
+    #    "cte", "~",
+    #    paste(data_col[!data_col %in% tm_exclude_col], collapse = " + ")))
 
-    tm_model <- lm(tm_formula, data = main)
-
-    results[[i]] <- tm_model
+    #tm_model <- lm(tm_formula, data = main)
 
     # 2. SORTED GROUP AVERAGE TREATMENT EFFECT
     # calculate propensity score (treated/all)
@@ -231,8 +239,88 @@ tm_gates <- function(target, treatment, data,
                         data = main,
                         weights = main$weight)
 
-    results[[num.iter+i]] <- gates_model
+    # get the coefficients and their confidence interval
+    mean <- summary(gates_model)$coef[c("G1","G2","G3","G4","G5"),1]
+    sd <- summary(gates_model)$coef[c("G1","G2","G3","G4","G5"),2]
+    crit <- qnorm(1-alpha/(num.groups))
+    results_gates[i, 1:5] <- sort(mean)
+    results_gates[i, 6:10] <- sort(mean+crit*sd)
+    results_gates[i, 11:15] <- sort(mean-crit*sd)
+
+    # analyze the features of each group
+    sorted_groups <- names(sort(mean))
+    feature_table <- main %>%
+      mutate(group = case_when(
+        G1 != 0 ~ "G1",
+        G2 != 0 ~ "G2",
+        G3 != 0 ~ "G3",
+        G4 != 0 ~ "G4",
+        G5 != 0 ~ "G5",
+        TRUE ~ "None"
+      )) %>%
+      mutate(sorted_group = case_when(
+        group == sorted_groups[1] ~ "1",
+        group == sorted_groups[2] ~ "2",
+        group == sorted_groups[3] ~ "3",
+        group == sorted_groups[4] ~ "4",
+        group == sorted_groups[5] ~ "5",
+        TRUE ~ "None"
+      )) %>%
+      group_by(sorted_group) %>%
+      summarize("ave_dur_exp_mo_pc" = mean(durables_exp_mo_pc_1),
+                "ave_anyloan_amt" = mean(anyloan_amt_1),
+                "ave_nondur_exp_mo_pc" = mean(nondurable_exp_mo_pc_1),
+                "ave_food_exp_mo_pc" = mean(food_exp_mo_pc_1),
+                "ave_health_exp_mo_pc" = mean(health_exp_mo_pc_1),
+                "ave_hhsize_adj" = mean(hhsize_adj_1),
+                "ave_head_age" = mean(head_age_1))
+
+    results_gates_durable_exp[i, ] <- feature_table %>% pull("ave_dur_exp_mo_pc")
+    results_gates_anyloan_exp[i, ] <- feature_table %>% pull("ave_anyloan_amt")
+    results_gates_nondura_exp[i, ] <- feature_table %>% pull("ave_nondur_exp_mo_pc")
+    results_gates_food_exp[i, ]    <- feature_table %>% pull("ave_food_exp_mo_pc")
+    results_gates_health_exp[i, ]  <- feature_table %>% pull("ave_health_exp_mo_pc")
+    results_gates_hhsize_adj[i, ]  <- feature_table %>% pull("ave_hhsize_adj")
+    results_gates_head_age[i, ]    <- feature_table %>% pull("ave_head_age")
+
+    # 3. Best Linear Predictor
+    Sd <- main$cte- mean(main$cte)
+    main$cte_ort <- I((main$treatment-main$prop_score)*Sd)
+    main$treatment_ort <- I(main$treatment-main$prop_score)
+
+    bp_formula <- as.formula((paste(target,
+                                    "~",
+                                    "baseline+cte+cte_ort+treatment_ort",
+                                    "|0|0|",
+                                    cluster)))
+    # use Weighted OLS
+    bp_model <- felm(bp_formula,
+                     data = main,
+                     weights = main$weights)
+
+    coef <- summary(bp_model)$coef["treatment_ort",1]
+    results_bp[i, 1] <- coef
+    results_bp[i, c(2,3)] <- confint(bp_model,
+                                     "treatment_ort",
+                                     level = 1-alpha)
   }
+  results <- list()
+  results[[1]] <- results_gates
+  results[[2]] <- results_gates_durable_exp
+  results[[3]] <- results_gates_anyloan_exp
+  results[[4]] <- results_gates_nondura_exp
+  results[[5]] <- results_gates_food_exp
+  results[[6]] <- results_gates_health_exp
+  results[[7]] <- results_gates_hhsize_adj
+  results[[8]] <- results_gates_head_age
+  results[[9]] <- results_bp
+  results[[10]] <- main
+  results[[11]] <- main_yi0
+  results[[12]] <- main_yi1
+  results[[13]] <- auxi_yi0
+  results[[14]] <- auxi_yi1
+  results[[15]] <- auxi_contr
+  results[[16]] <- auxi_treat
   return(results)
 }
 

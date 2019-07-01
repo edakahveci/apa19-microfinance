@@ -8,294 +8,40 @@ output:
 ## Load The Required Packages
 
 ```{r}
-library(readstata13)
 library(tidyverse)
-library(outliers)
 library(ggplot2)
 library(caret)
 library(randomForest)
 library(lfe)
 library(grf)
 library(cowplot)
-```
-
-## Source The Helper Functions
-
-```{r}
 source("helpers.r")
 ```
 
-# Data Preparation And Exploration
-
-## Load The Datasets
+# Business Index
 
 ```{r}
-endlines <- read.dta13("data/2013-0533_data_endlines1and2.dta",
-                       convert.factors = FALSE,
-                       generate.factors = TRUE)
-str(endlines)
-```
-
-## Split Endline1 And Endline2
-
-```{r}
-endline1 <- endlines %>%
-  filter(sample1 == 1) %>%
-  select(colnames(endlines)[1:16], contains("_1"))
+endline1 <- load_endline1()
 str(endline1)
 ```
 
-## Exclude Irrelevant & Redundant Covariates
-
-There are some variables in the dataset that are only relevant when the data were collected, such as the information of when the inspectors visit the households and if the households were included in the endline surveys.
+## Prepare The Dataset
 
 ```{r}
-endline1 <- endline1 %>%
-  select(-c(w, w1, w2, sample1, sample2, visitday_1, visitmonth_1, visityear_1))
+endline1 <- load_endline1()
+
+target_index <- "biz_index_all_1"
+
+endline1_biz <- endline1 %>%
+  filter(total_biz_1 != 0) %>%
+  select(everything(),
+         -hhid,
+         -starts_with("biz"),
+         -hours_week_outside_1,
+         -contains("index"), # prevent confounding
+         target_index)       # add target index
+str(endline1_biz)
 ```
-
-Since we are going to use `areaid` to do cluster analysis, including the area-level variables doesn't make much sense.
-
-```{r}
-endline1 <- endline1 %>%
-  select(-starts_with("area_"))
-```
-
-The dataset include both total expense and per-capita version for each expense category per month (or annual). To prevent issues with overspecified (irrelevant variables), we exclude the total expenses and only leave the per-capita variables.
-
-```{r}
-endline1 <- endline1 %>%
-  select(-ends_with("_mo_1"),
-         -ends_with("_annual_1"))
-```
-
-### Business-related Variables
-
-`old_biz` and `any_old_biz` contain similar information, the former indicates how many old businesses a household own prior to the first endline and the latter is a binary variable that indicates whether a household has at least an old business. Here we combine the two variables and assume those households that didn't answer the question was either not a busniess owner at all or not understood the question. Either ways, we could safely consider them as having 0 old busineses.
-
-```{r}
-summary(endline1$old_biz)
-summary(endline1$any_old_biz)
-```
-
-```{r}
-endline1 <- endline1 %>%
-  mutate(old_biz = ifelse(any_old_biz == 0 | is.na(any_old_biz) == TRUE,
-                          0,
-                          old_biz))
-# Delete any_old_biz as the information is combined with old_biz
-endline1$any_old_biz <- NULL
-```
-
-The same reasoning could be apply to `total_biz_1` and `any_biz_1`.
-
-```{r}
-endline1 <- endline1 %>%
-  mutate(total_biz_1 = ifelse(any_biz_1 == 0 | is.na(any_biz_1) == TRUE,
-                              0,
-                              total_biz_1))
-# Delete any_biz_1 as the information is combined with total_biz_1
-endline1$any_biz_1 <- NULL
-```
-
-```{r}
-endline1 <- endline1 %>%
-  mutate(newbiz_1 = ifelse(any_new_biz_1 == 0 | is.na(any_new_biz_1) == TRUE,
-                           0,
-                           newbiz_1))
-# Delete any_biz_1 as the information is combined with newbiz_1
-endline1$any_new_biz_1 <- NULL
-```
-
-### Household-related variables
-
-```{r}
-endline1 %>% 
-  select(hhsize_1, adults_1, children_1) %>% 
-  mutate(hh_total = adults_1 + children_1) %>% 
-  filter(hhsize_1 != hh_total) %>%
-  nrow()
-```
-
-```{r}
-endline1$hhsize_1 <- NULL
-```
-
-### Loan-related Variables
-
-```{r}
-endline1 %>% 
-  select(anymfi_1, spandana_1, othermfi_1) %>% 
-  mutate(mfi = max(spandana_1, othermfi_1)) %>% 
-  filter(anymfi_1 != mfi) %>%
-  nrow()
-
-endline1 %>% 
-  select(anymfi_amt_1, spandana_amt_1, othermfi_amt_1) %>% 
-  mutate(total_mfi_amt = spandana_amt_1 + othermfi_amt_1) %>% 
-  filter(anymfi_amt_1 != total_mfi_amt) %>%
-  nrow()
-```
-
-```{r}
-endline1$anymfi_1 <- NULL
-endline1$anymfi_amt_1 <- NULL
-```
-
-### Labor-related Variables
-
-```{r}
-endline1 %>% 
-  select(hours_week_1, hours_week_biz_1, hours_week_outside_1) %>% 
-  mutate(hours_week_sum = hours_week_biz_1 + hours_week_outside_1) %>% 
-  filter(hours_week_1 != hours_week_sum) %>%
-  nrow()
-
-endline1 %>% 
-  select(hours_headspouse_week_1, hours_headspouse_biz_1, hours_headspouse_outside_1) %>% 
-  mutate(hours_headspouse_week_sum = hours_headspouse_biz_1 + hours_headspouse_outside_1) %>% 
-  filter(hours_headspouse_week_1 != hours_headspouse_week_sum) %>%
-  nrow()
-
-endline1 %>% 
-  select(hours_child1620_week_1, hours_boy1620_week_1, hours_girl1620_week_1) %>% 
-  mutate(hours_children_total = hours_boy1620_week_1 + hours_girl1620_week_1) %>% 
-  filter(hours_child1620_week_1 != hours_children_total) %>%
-  nrow()
-```
-
-```{r}
-endline1$hours_week_1 <- NULL
-endline1$hours_headspouse_week_1 <- NULL
-endline1$hours_child1620_week_1 <- NULL
-```
-
-## Missing Values
-
-We will first delete the covariates that contains a huge amount of missing values. Then we will look into the remaining covariates and fill them with custom methods.
-
-First we need to find out which variable contains unreasonable amount of missing value.
-
-```{r}
-# set the threshold of na ratio
-na_delete_threshold <- 0.1
-na_table(endline1) %>% filter(ratio > na_delete_threshold)
-```
-
-We will delete those variables as the information might not be helpful.
-
-```{r}
-# select the variables that has a large amount of missing value
-na_delete_col <- (na_table(endline1) %>% filter(ratio > na_delete_threshold))[,1]
-# delete those variables
-for (col in na_delete_col) {
-  endline1[,col] <- NULL
-}
-```
-
-### Filling The Missing Values - Business-related Variables
-
-```{r}
-endline1 <- endline1 %>% 
-  mutate(bizassets_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
-                              0,
-                              bizassets_1),
-         bizinvestment_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
-                                  0,
-                                  bizinvestment_1),
-         bizrev_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
-                           0,
-                           bizrev_1),
-         bizexpense_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
-                               0,
-                               bizexpense_1),
-         bizprofit_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
-                              0,
-                              bizprofit_1),
-         bizemployees_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
-                                 0,
-                                 bizemployees_1))
-```
-
-### For All The Other Variables Except Index Variables
-
-```{r}
-covariates_name <- endline1 %>% 
-  select(-contains("index")) %>%
-  colnames()
-for (covar in covariates_name) {
-  endline1[is.na(endline1[, covar]), covar] <- 
-    median(endline1[, covar], na.rm = TRUE)
-}
-```
-
-### Check The Result
-
-```{r}
-na_table(endline1) %>% filter(n != 0)
-```
-
-```{r}
-endline1 <- na.omit(endline1)
-nrow(endline1)
-```
-
-## Outliers
-
-First we want to know which column (variable) contains outliers and how many of them. Here we will use "Z-score" approach to detect outliers.
-
-```{r}
-exp_col <- endline1 %>% 
-<<<<<<< HEAD:colab_notebook.Rmd
-  select(contains("consumption_index_1")) %>%
-  colnames()
-for (covar in exp_col) {
-  covar_outlier <- scores(x = endline1[, covar], type = "iqr", lim = 10)
-=======
-  select(contains("exp_mo_pc")) %>%
-  colnames()
-for (covar in exp_col) {
-  covar_outlier <- scores(x = endline1[, covar], type = "iqr", lim = 5)
->>>>>>> f85a5f3681b39436cb717a86a8949ed91497cdb0:notebook.Rmd
-  endline1 <- endline1[!covar_outlier, ]
-}
-```
-
-# Design Of The Study
-
-We want to study the effect of "availibility of microcredit" on different aspects of the households in Hyderabad, India: 
-
-- Business
-- ...
-
-However, the fact that in the original study, they didn't collect the baseline data in a very rigorous way and they were not confident enough that the baseline data is representative of the slum of whole.  Hence the baseline data was only as a basis for stratification, the descriptive analysis, and to collect **area-level characteristics** that are used as control variables.
-
-Because of the flaw of our datasets, we lose the ability to directly link baseline data with endlines data, hence could not perform the analysis on household-level. To mitigate this issue, we use the "index variables", which were calculated by the authors and were included in our dataset, as our target variables. And we assumed that those variables already include the information we need to analyze the causal effect.
-
-## How They Calculate The Results in The Original Paper
-
-For each "target" variable, they run an weighted OLS:
-
-$y_{ia} = \alpha + \beta * Treatment_a + X'\gamma + \epsilon_{ia}$
-
-```{r eval=FALSE, include=FALSE}
-spandana_amt <- felm(spandana_amt_1 ~ 1 + treatment + area_pop_base + 
-                     area_business_total_base + area_exp_pc_mean_base + 
-                     area_literate_head_base + area_literate_base + 
-                     area_debt_total_base, 
-                     data = endline1,
-                     weights = endline1$w1)
-
-summary(spandana_amt)
-```
-
-```{r}
-endline1 %>%
-  filter(treatment == "Control") %>%
-  summarize(mean = mean(spandana_amt_1, na.rm = TRUE))
-```
-
-# Business Index
 
 ## Treatment & Target Variable
 
@@ -305,83 +51,13 @@ endline1 %>%
 We want to find out whether there are heterogeneous effects of  "availibility of Spandana microcredit loan" on business in the area.
 
 ```{r}
-endline1 %>%
+endline1_biz %>%
   group_by(treatment) %>%
   summarize("Num. of Obs." = n(),
             "Ave. Biz. Index" = mean(biz_index_all_1, na.rm = TRUE))
 ```
 
-## Define The Dataset
-
-```{r}
-target_index <- "biz_index_all_1"
-
-endline1_biz <- endline1 %>%
-  select(everything(),
-         -hhid,
-         -starts_with("biz"),
-         -contains("index"), # prevent confounding
-         target_index)       # add target index
-str(endline1_biz)
-```
-
 ## Two-Models Approach With Sorted Group Average Treatment Effects (GATES)
-
-<<<<<<< HEAD:colab_notebook.Rmd
-## F-Tests
-```{r eval=FALSE, include=FALSE}
-# auxi_ind <- createDataPartition(y = endline1$treatment, p = 0.7, list = FALSE)
-=======
-### F-Tests
-```{r}
-auxi_ind <- createDataPartition(y = endline1$treatment, p = 0.7, list = FALSE)
->>>>>>> f85a5f3681b39436cb717a86a8949ed91497cdb0:notebook.Rmd
-auxi <- endline1[auxi_ind, ]
-main <- endline1[-auxi_ind,]
-
-auxi_treat_ind <- which(auxi[,"treatment"] == 1)
-auxi_treat <- auxi[auxi_treat_ind, ]
-auxi_contr <- auxi[-auxi_treat_ind,]
-
-var.test(auxi_treat$spouse_literate_1, auxi_contr$spouse_literate_1, alternative = "two.sided")
-var.test(auxi_treat$spouse_works_wage_1, auxi_contr$spouse_works_wage_1, alternative = "two.sided")
-var.test(auxi_treat$hhsize_1, auxi_contr$hhsize_1, alternative = "two.sided")
-var.test(auxi_treat$women1845_1, auxi_contr$women1845_1, alternative = "two.sided")
-var.test(auxi_treat$anychild1318_1, auxi_contr$anychild1318_1, alternative = "two.sided")
-var.test(auxi_treat$old_biz, auxi_contr$old_biz, alternative = "two.sided")
-var.test(auxi_treat$ownland_hyderabad_1, auxi_contr$ownland_hyderabad_1, alternative = "two.sided")
-var.test(auxi_treat$ownland_village_1, auxi_contr$ownland_village_1, alternative = "two.sided")
-
-for (covar in colnames(auxi_treat)) {
-  F_test <- var.test(auxi_treat[,covar], auxi_contr[,covar], alternative = "two.sided")
-  signif_value <- 0.05
-  print(ifelse(F_test$p.value < 0.05, covar, 0))
-  }
-
-treated <- endline1 %>%
-  filter(treatment == 1)
-
-control <- endline1 %>%
-  filter(treatment == 0)
- 
-var.test(treated$spouse_literate_1, control$spouse_literate_1, alternative = "two.sided")
-var.test(treated$spouse_works_wage_1, control$spouse_works_wage_1, alternative = "two.sided")
-var.test(treated$hhsize_1, control$hhsize_1, alternative = "two.sided")
-var.test(treated$women1845_1, control$women1845_1, alternative = "two.sided")
-var.test(treated$anychild1318_1, control$anychild1318_1, alternative = "two.sided")
-var.test(treated$old_biz, control$old_biz, alternative = "two.sided")
-var.test(treated$ownland_hyderabad_1, control$ownland_hyderabad_1, alternative = "two.sided")
-var.test(treated$ownland_village_1, control$ownland_village_1, alternative = "two.sided")
-
-for (covar in colnames(treated)) {
-  F_test <- var.test(treated[,covar], control[,covar], alternative = "two.sided")
-  signif_value <- 0.05
-  print(ifelse(F_test$p.value < 0.05, covar, 0))
-  }
-
-# The p-value of F-test is greater than the significance level 0.05. In conclusion, there is no significant difference between the two variances.
-
-```
 
 ### Rescale The Dataset
 
@@ -392,165 +68,357 @@ results.
 ```{r}
 preScale <- preProcess(endline1_biz[,3:(ncol(endline1_biz)-1)],
                        method = c("scale", "center"))
-
 endline1_biz_scale <- predict(preScale, newdata = endline1_biz)
-````
+```
+
+```{r}
+biz_med <- median(endline1_biz$biz_index_all_1)
+endline1_biz_bin <- endline1_biz %>%
+  mutate(biz_index_all_1 =  ifelse(endline1_biz$biz_index_all_1 > biz_med,
+                                   1,
+                                   0))
+```
+
 
 ### Results (using Random Forest)
 
 ```{r}
-tm_gates_biz <- tm_gates("biz_index_all_1", "treatment", endline1_biz_scale,
-                         split_ratio = 0.6,
-                         cluster="areaid", num.iter=1, ml_method="rf")
+source("helpers.r")
+num.iters <- 10
+tm_gates_biz <- tm_gates("biz_index_all_1", "treatment", endline1_biz,
+                         split_ratio = 0.5,
+                         cluster="areaid", num.iter=num.iters, ml_method="rf")
 ```
 
 ```{r}
-summary(tm_gates_biz[[1]])
+tm_gates_biz_bin <- tm_gates("biz_index_all_1", "treatment", endline1_biz_bin,
+                         split_ratio = 0.5,
+                         cluster="areaid", num.iter=num.iters, ml_method="rf")
 ```
 
 ```{r}
-summary(tm_gates_biz[[2]])
+library(pdp)
+auxi_contr <- tm_gates_biz[[15]]
+auxi_treat <- tm_gates_biz[[16]]
 ```
 
-### Results (using Causal Random Forest)
+### PDP For Durables Expenditure
 
 ```{r}
-tm_gates_biz_crf <- tm_gates("biz_index_all_1", "treatment", endline1_biz_scale,
-                             split_ratio = 0.6,
-                             cluster="areaid", num.iter=1, ml_method="crf")
+pdp_durable_contr <- tm_gates_biz[[13]] %>%
+  partial(pred.var = "durables_exp_mo_pc_1",
+          chull = TRUE, progress = "text")
+pdp_durable_treat <- tm_gates_biz[[14]] %>%
+  partial(pred.var = "durables_exp_mo_pc_1",
+          chull = TRUE, progress = "text")
+
+pdp_durable_contr[, "yhat_treat"] <- pdp_durable_treat$yhat
+pdp_durable_contr[, "cte"] <- pdp_durable_contr$yhat_treat- pdp_durable_contr$yhat
+
+ggplot() +
+  geom_line(data = pdp_durable_contr, 
+            aes(x=durables_exp_mo_pc_1, y=yhat), color="red") + 
+  geom_line(data = pdp_durable_treat,
+            aes(x=durables_exp_mo_pc_1, y=yhat), color="blue")
+
+pdp_durable <- ggplot() +
+  geom_line(data = pdp_durable_contr, aes(x=durables_exp_mo_pc_1, y=cte))
+```
+
+### PDP For Adjusted Household Size
+
+```{r}
+pdp_hhsize_contr <- tm_gates_biz[[13]] %>%
+  partial(pred.var = "hhsize_adj_1",
+          chull = TRUE, progress = "text")
+pdp_hhsize_treat <- tm_gates_biz[[14]] %>%
+  partial(pred.var = "hhsize_adj_1",
+          chull = TRUE, progress = "text")
+
+pdp_hhsize_contr[, "yhat_treat"] <- pdp_hhsize_treat$yhat
+pdp_hhsize_contr[, "cte"] <- pdp_hhsize_contr$yhat_treat- pdp_hhsize_contr$yhat
+
+
+ggplot() +
+  geom_line(data = pdp_hhsize_contr, 
+            aes(x=hhsize_adj_1, y=yhat), color="red") + 
+  geom_line(data = pdp_hhsize_treat,
+            aes(x=hhsize_adj_1, y=yhat), color="blue")
+
+pdp_hhsize <- ggplot() +
+  geom_line(data = pdp_hhsize_contr, aes(x=hhsize_adj_1, y=cte))
+```
+
+### PDP For Nondurable Expenditure
+
+```{r}
+pdp_nondurable_contr <- tm_gates_biz[[13]] %>%
+  partial(pred.var = "nondurable_exp_mo_pc_1",
+          chull = TRUE, progress = "text")
+pdp_nondurable_treat <- tm_gates_biz[[14]] %>%
+  partial(pred.var = "nondurable_exp_mo_pc_1",
+          chull = TRUE, progress = "text")
+
+pdp_nondurable_contr[, "yhat_treat"] <- pdp_nondurable_treat$yhat
+pdp_nondurable_contr[, "cte"] <- pdp_nondurable_contr$yhat_treat- pdp_nondurable_contr$yhat
+
+ggplot() +
+  geom_line(data = pdp_nondurable_contr, 
+            aes(x=nondurable_exp_mo_pc_1, y=yhat), color="red") + 
+  geom_line(data = pdp_nondurable_treat,
+            aes(x=nondurable_exp_mo_pc_1, y=yhat), color="blue")
+
+pdp_nondurable <- ggplot() +
+  geom_line(data = pdp_nondurable_contr, aes(x=nondurable_exp_mo_pc_1, y=cte))
+```
+
+### PDP For Health Expenditure
+
+```{r}
+pdp_health_contr <- tm_gates_biz[[13]] %>%
+  partial(pred.var = "health_exp_mo_pc_1",
+          chull = TRUE, progress = "text")
+pdp_health_treat <- tm_gates_biz[[14]] %>%
+  partial(pred.var = "health_exp_mo_pc_1",
+          chull = TRUE, progress = "text")
+
+pdp_health_contr[, "yhat_treat"] <- pdp_health_treat$yhat
+pdp_health_contr[, "cte"] <- pdp_health_contr$yhat_treat- pdp_health_contr$yhat
+
+ggplot() +
+  geom_line(data = pdp_health_contr, 
+            aes(x=health_exp_mo_pc_1, y=yhat), color="red") + 
+  geom_line(data = pdp_health_treat,
+            aes(x=health_exp_mo_pc_1, y=yhat), color="blue")
+
+pdp_health <- ggplot() +
+  geom_line(data = pdp_health_contr, aes(x=health_exp_mo_pc_1, y=cte))
+```
+
+### PDP
+
+```{r}
+cowplot::plot_grid(pdp_hhsize, pdp_nondurable, pdp_health, pdp_durable)
+```
+
+
+```{r}
+library(tools4uplift)
+library(uplift)
 ```
 
 ```{r}
-summary(tm_gates_biz_crf[[1]])
+gates_perf <- uplift::performance(1 - tm_gates_biz[[9]],
+                                  1 - tm_gates_biz[[8]],
+                                  tm_gates_biz[[7]]$biz_index_all_1,
+                                  tm_gates_biz[[7]]$treatment)
+uplift::qini(gates_perf, direction = 1, plotit = TRUE)
 ```
 
 ```{r}
-summary(tm_gates_biz_crf[[2]])
+apply(tm_gates_biz[[2]], 2, median)
+apply(tm_gates_biz[[3]], 2, median)
+apply(tm_gates_biz[[4]], 2, median)
+apply(tm_gates_biz[[5]], 2, median)
 ```
 
-<<<<<<< HEAD:colab_notebook.Rmd
+```{r}
+ave_dur_exp_plot_data <- cbind(data.frame(apply(tm_gates_biz[[2]], 2, median)), c("G1", "G2", "G3", "G4", "G5"))
+colnames(ave_dur_exp_plot_data) <- c("ave_dur_exp", "group")
+ggplot(ave_dur_exp_plot_data, aes(x=group, y=ave_dur_exp, label=ave_dur_exp)) + 
+  geom_col() + 
+  geom_text(aes(label=round(ave_dur_exp)), hjust=0, vjust=-2) +
+  labs(x = "Group", y = "Average Durable Expenditure (mo/pc)") +
+  ylim(0, 100)
+```
+
+```{r}
+ave_loan_amt_plot_data <- cbind(data.frame(apply(tm_gates_biz[[3]], 2, median)), c("G1", "G2", "G3", "G4", "G5"))
+colnames(ave_loan_amt_plot_data) <- c("ave_loan_amt_exp", "group")
+ggplot(ave_loan_amt_plot_data, aes(x=group, y=ave_loan_amt_exp, label=ave_loan_amt_exp)) + 
+  geom_col() +
+  geom_text(aes(label=round(ave_loan_amt_exp)), hjust=0, vjust=-2) +
+  labs(x = "Group", y = "Average Loan Amount") +
+  ylim(0, 150000)
+```
+
+```{r}
+ave_nondur_exp_plot_data <- cbind(data.frame(apply(tm_gates_biz[[4]], 2, median)), c("G1", "G2", "G3", "G4", "G5"))
+colnames(ave_nondur_exp_plot_data) <- c("ave_nondur_exp", "group")
+ggplot(ave_nondur_exp_plot_data, aes(x=group, y=ave_nondur_exp, label=ave_nondur_exp)) + 
+  geom_col() + 
+  geom_text(aes(label=round(ave_nondur_exp)), hjust=0, vjust=-2) +
+  labs(x = "Group", y = "Average Nondurable Expenditure (mo/pc)") +
+  ylim(0, 1800)
+```
+
+```{r}
+ave_food_exp_plot_data <- cbind(data.frame(apply(tm_gates_biz[[5]], 2, median)), c("G1", "G2", "G3", "G4", "G5"))
+colnames(ave_food_exp_plot_data) <- c("ave_food_exp", "group")
+ggplot(ave_food_exp_plot_data, aes(x=group, y=ave_food_exp, label=ave_food_exp)) + 
+  geom_col() + 
+  geom_text(aes(label=round(ave_food_exp)), hjust=0, vjust=-2) +
+  labs(x = "Group", y = "Average Food Expenditure (mo/pc)") +
+  ylim(0, 700)
+```
+
+```{r}
+ave_health_exp_plot_data <- cbind(data.frame(apply(tm_gates_biz[[6]], 2, median)), c("G1", "G2", "G3", "G4", "G5"))
+colnames(ave_health_exp_plot_data) <- c("ave_health_exp", "group")
+ggplot(ave_health_exp_plot_data, aes(x=group, y=ave_health_exp, label=ave_health_exp)) + 
+  geom_col() + 
+  geom_text(aes(label=round(ave_health_exp)), hjust=0, vjust=-2) +
+  labs(x = "Group", y = "Average Health Expenditure (mo/pc)") +
+  ylim(0, 100)
+```
+
+```{r}
+ave_hhsize_adj_plot_data <- cbind(data.frame(apply(tm_gates_biz[[7]], 2, median)), c("G1", "G2", "G3", "G4", "G5"))
+colnames(ave_hhsize_adj_plot_data) <- c("ave_hhsize_adj", "group")
+ggplot(ave_hhsize_adj_plot_data, aes(x=group, y=ave_hhsize_adj, label=ave_hhsize_adj)) + 
+  geom_col() + 
+  geom_text(aes(label=round(ave_hhsize_adj, 5)), hjust=0, vjust=-2) +
+  labs(x = "Group", y = "Average Household Size (adjusted)") +
+  ylim(0, 6)
+```
+
+```{r}
+ave_head_age_plot_data <- cbind(data.frame(apply(tm_gates_biz[[8]], 2, median)), c("G1", "G2", "G3", "G4", "G5"))
+colnames(ave_head_age_plot_data) <- c("ave_head_age", "group")
+ggplot(ave_head_age_plot_data, aes(x=group, y=ave_head_age, label=ave_head_age)) + 
+  geom_col() + 
+  geom_text(aes(label=round(ave_head_age, 5)), hjust=0, vjust=-2) +
+  labs(x = "Group", y = "Average Head Age") +
+  ylim(0, 80)
+```
+
+
+### GATES
+
+```{r}
+alpha <- 0.05
+groups <- 5
+gates_plot_data <- data.frame(matrix(NA, ncol = 4, nrow = groups))
+gates_plot_data[, 1] <- c("1", "2", "3", "4", "5")
+for (i in 1:5) {
+  gates_plot_data[i, 2] <- median(tm_gates_biz[[1]][, i])
+  gates_plot_data[i, 3] <- median(tm_gates_biz[[1]][, i+5])
+  gates_plot_data[i, 4] <- median(tm_gates_biz[[1]][, i+10])
+}
+colnames(gates_plot_data) <- c("G", "F", "U", "L")
+```
+
+```{r}
+bp_plot_data <- data.frame(matrix(NA, ncol = 4, nrow = 10))
+bp_plot_data[,1] <- c(-Inf, Inf)
+for (i in 1:3) {
+  bp_plot_data[,i+1] <- median(tm_gates_biz[[9]][, i])
+}
+colnames(bp_plot_data) <- c("x", "ATE", "L", "U")
+```
+
+```{r}
+ggplot() + 
+  theme_gray(base_size = 14) +
+  geom_point(data=gates_plot_data,
+             aes(y = F, x = G, colour='GATES'),
+             size = 3) +
+  geom_errorbar(data=gates_plot_data,
+                aes(ymax = U, ymin = L ,
+                    x = G, width=0.7, colour="90% CB(GATES)"),
+                show.legend = TRUE) +
+  geom_line(aes(x = x, y = ATE, 
+                linetype = cutoff, 
+                colour='ATE'), 
+            bp_plot_data, 
+            linetype = 2) +
+  geom_line(aes(x = x, y = U, 
+                linetype = cutoff, 
+                colour='90% CB(ATE)'), 
+            bp_plot_data, 
+            linetype = 2) +
+  geom_line(aes(x = x, y = L, 
+                linetype = cutoff), 
+            bp_plot_data, 
+            linetype = 2,
+            color = "red") +
+  scale_colour_manual(values = c("red", "black", "blue", "black"),
+                      breaks=c('ATE','90% CB(ATE)',"GATES",'90% CB(GATES)'),
+                      guide = guide_legend(override.aes = list(
+                        linetype = c("dashed", "dashed"  ,"blank", "solid"),
+                        shape = c(NA,NA, 16, NA)), 
+                        ncol =2,
+                        byrow=TRUE)) +
+  theme(plot.title = element_text(hjust = 0.5,size = 11, face = "bold"),
+        axis.title=element_text(size=10), 
+        legend.text=element_text(size=7), 
+        legend.key = element_rect(colour = NA, fill = NA), 
+        legend.key.size = unit(1, 'lines'),
+        legend.title=element_blank(),
+        legend.justification=c(0,1), 
+        legend.position=c(0,1), 
+        legend.background=element_rect(fill=alpha('blue', 0)))  +
+  ylim(range(-0.3, 0.5)) +
+  labs(title="GATES with Random Forest on Business Index", 
+       y = "Treatment Effect", x = "Group by Het Score")
+```
+
 # CAUSAL FOREST
-
-## Var_imp_plot function
-```{r}
-var_imp_plot <- function(forest, decay.exponent = 2L, max.depth = 4L) {
-  
-  # Calculate variable importance of all features
-  # (from print.R)
-  split.freq <- split_frequencies(forest, max.depth)
-  split.freq <- split.freq / pmax(1L, rowSums(split.freq))
-  weight <- seq_len(nrow(split.freq)) ^ -decay.exponent
-  var.importance <- t(split.freq) %*% weight / sum(weight)
-  
-  # Format data frame
-  p <- ncol(forest$X.orig)
-  
-  var.names <- colnames(forest$X.orig)[seq_len(p)]
-  if (is.null(var.names)) {
-    var.names <- paste0('x', seq_len(p))
-  }
-  df <- tibble(Variable = var.names,
-               Importance = as.numeric(var.importance)) %>%
-    arrange(Importance) %>% 
-    mutate(Variable = factor(Variable, levels = unique(Variable)))
-  
-  # Plot results
-  p <- ggplot(df, aes(Variable, Importance)) + 
-    geom_bar(stat = 'identity') + 
-    coord_flip() + 
-    ggtitle('Variable Importance') + 
-    theme_bw() + 
-    theme(plot.title = element_text(hjust = 0.5))
-  print(p)
-}
-```
-
-## Trend Plots Function
-
-```{r}
-trend_plots <- function(crf, test) {
-  # Get the variable importance table
-  var_imp <- crf %>% 
-    variable_importance() %>% 
-    as.data.frame() %>% 
-    mutate(variable = colnames(crf$X.orig)) %>% 
-    arrange(desc(V1))
-  # for the first four most important variable
-  # create a plot that shows if there are trend of correlation
-  p1 <- ggplot(test, aes(x = test[, var_imp$variable[1]], y = preds)) +
-    geom_point() +
-    geom_smooth(method = "loess", span = 1) +
-    theme_light() +
-    labs(x = var_imp$variable[1], y = "pred. CTE")
-  p2 <- ggplot(test, aes(x = test[, var_imp$variable[2]], y = preds)) +
-    geom_point() +
-    geom_smooth(method = "loess", span = 1) +
-    theme_light() +
-    labs(x = var_imp$variable[2], y = "pred. CTE")
-  p3 <- ggplot(test, aes(x = test[, var_imp$variable[3]], y = preds)) +
-    geom_point() +
-    geom_smooth(method = "loess", span = 1) +
-    theme_light() +
-    labs(x = var_imp$variable[3], y = "pred. CTE")
-  p4 <- ggplot(test, aes(x = test[, var_imp$variable[4]], y = preds)) +
-    geom_point() +
-    geom_smooth(method = "loess", span = 1) +
-    theme_light() +
-    labs(x = var_imp$variable[4], y = "pred. CTE")
-  p5 <- ggplot(test, aes(x = test[, var_imp$variable[5]], y = preds)) +
-    geom_point() +
-    geom_smooth(method = "loess", span = 1) +
-    theme_light() +
-    labs(x = var_imp$variable[5], y = "pred. CTE")
-  p6 <- ggplot(test, aes(x = test[, var_imp$variable[6]], y = preds)) +
-    geom_point() +
-    geom_smooth(method = "loess", span = 1) +
-    theme_light() +
-    labs(x = var_imp$variable[6], y = "pred. CTE")
-  p7 <- ggplot(test, aes(x = test[, var_imp$variable[7]], y = preds)) +
-    geom_point() +
-    geom_smooth(method = "loess", span = 1) +
-    theme_light() +
-    labs(x = var_imp$variable[7], y = "pred. CTE")
-  p8 <- ggplot(test, aes(x = test[, var_imp$variable[8]], y = preds)) +
-    geom_point() +
-    geom_smooth(method = "loess", span = 1) +
-    theme_light() +
-    labs(x = var_imp$variable[8], y = "pred. CTE")
-  # combine those plots
-  cowplot::plot_grid(p1, p2, p3, p4, p5, p6, p7, p8, ncol = 2)
-}
-```
-```{r}
-endline1 %>%
-  select(
-    contains("amt")
-  )
-```
-
 
 ## Business Index
 
 ```{r}
-target_index <- "biz_index_all_1"
-
-endline1_biz <- endline1 %>%
-  filter(total_biz_1 != 0) %>%
-  select(everything(),
-         -hhid,
-         -contains("biz"),
-         -total_exp_mo_pc_1,
-         -contains("index"),
-         # prevent confounding
-         target_index)       # add target index
-str(endline1_biz)
-
-endline1_biz$biz_index_all_1 <- ifelse(endline1_biz$biz_index_all_1<0, 0, 1)
 # test/train
 set.seed(123)
-idx.train <- caret::createDataPartition(y = endline1_biz$treatment, p = 0.75, list = FALSE) 
+idx.train <- caret::createDataPartition(y = endline1_biz$treatment, p = 0.70, list = FALSE) 
 train <- endline1_biz[idx.train, ] # training set
 test <-  endline1_biz[-idx.train, ]
+
+# train data
+Y <- train$biz_index_all_1
+X <- train %>% 
+  select(-treatment, -target_index, -areaid)
+X.clusters <- train$areaid
+W <- train$treatment
+
+# model
+forest <- causal_forest(
+  model.matrix(~., data = X),
+  Y,
+  W,
+  clusters = X.clusters,
+  mtry = 3, 
+  num.trees = 5000,
+  honesty = TRUE,
+  seed = 234)
+```
+
+```{r}
+var_imp_plot(forest)
+```
+
+```{r}
+# test data
+test_Y <- test$biz_index_all_1
+test_X <- test %>% 
+  select(-treatment, -target_index, -areaid)
+test_clusters <- test$areaid
+test_W <- test$treatment
+
+# prediction
+preds <- predict(
+  object = forest,
+  newdata = model.matrix(~ ., data = test_X, estimate.variance = TRUE))
+test$preds <- preds$predictions
+trend_plots(forest, test)
+```
+
+```{r}
+# test/train
+set.seed(123)
+idx.train <- caret::createDataPartition(y = endline1_biz_bin$treatment, p = 0.75, list = FALSE) 
+train <- endline1_biz_bin[idx.train, ] # training set
+test <-  endline1_biz_bin[-idx.train, ]
 
 # train data
 Y <- train$biz_index_all_1
@@ -587,8 +455,34 @@ trend_plots(forest, test)
 ```
 
 ```{r}
+tm_gates_biz_bin[[7]]$cte <- 1 - tm_gates_biz_bin[[7]]$cte
+```
+
+
+```{r}
+tm_qini_table <- QiniTable(tm_gates_biz_bin[[7]], "treatment", "biz_index_all_1", "cte")
+crf_qini_table <- QiniTable(test, "treatment", "biz_index_all_1", "preds")
+qini_plot_data <- data.frame(matrix(NA, ncol = 4, nrow = 11))
+colnames(qini_plot_data) <- c("tm_X","tm_Y", "crf_X", "crf_Y")
+qini_plot_data$tm_X <- c(0, tm_qini_table[, 3])/tm_qini_table[nrow(tm_qini_table), 3]*100
+qini_plot_data$tm_Y <- c(0, tm_qini_table[, 7])
+qini_plot_data$crf_X <- c(0, crf_qini_table[, 3])/crf_qini_table[nrow(crf_qini_table), 3]*100
+qini_plot_data$crf_Y <- c(0, crf_qini_table[, 7])
+```
+```{r}
+ggplot(qini_plot_data) + 
+  geom_line(aes(x=tm_X, y=tm_Y, color = "red")) +
+  geom_line(aes(x=crf_X, y=crf_Y, color = "darkblue")) +
+  scale_color_discrete(name = "Methods", labels = c("Two-model", "Causal RF")) +
+  labs(x="Proportion of Population Targeted (%)",
+       y="Incremental Uplift (%)") +
+  ylim(-10, 10)
+```
+
+
+```{r}
 test <- cbind(test, preds)
-table <- QiniTable(test, "treatment", "biz_index_all_1", "predictions")
+
 table
 QiniCurve(table)
 ```
@@ -641,10 +535,11 @@ test$preds <- preds$predictions
 trend_plots(forest, test)
 ```
 
-
 ```{r}
-str(endline1_biz)
+QiniCurve(QiniTable(test, "treatment", "biz_index_all_1", "preds"))
 ```
+
+### Re-run The Model With Only Important Variables
 
 ```{r}
 Y.forest = regression_forest(X, Y, clusters = X.clusters)

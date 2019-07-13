@@ -18,29 +18,40 @@ library(cowplot)
 source("helpers.r")
 ```
 
-# Business Index
+# Prepare Endline1 Dataset
 
 ```{r}
 endline1 <- load_endline1()
 str(endline1)
 ```
 
+# Business Index
+
 ## Prepare The Dataset
 
 ```{r}
-endline1 <- load_endline1()
-
 target_index <- "biz_index_all_1"
 
 endline1_biz <- endline1 %>%
   filter(total_biz_1 != 0) %>%
   select(everything(),
          -hhid,
-         -starts_with("biz"),
-         -hours_week_outside_1,
+         -contains("biz"),
+         -anyloan_1,
+         -anyloan_amt_1,
          -contains("index"), # prevent confounding
          target_index)       # add target index
-str(endline1_biz)
+
+endline1_biz_noexp <- endline1 %>%
+  filter(total_biz_1 != 0) %>%
+  select(everything(),
+         -hhid,
+         -contains("biz"),
+         -anyloan_1,
+         -anyloan_amt_1,
+         -contains("exp"),   # prevent confounding
+         -contains("index"), # prevent confounding
+         target_index)       # add target index
 ```
 
 ## Treatment & Target Variable
@@ -57,30 +68,9 @@ endline1_biz %>%
             "Ave. Biz. Index" = mean(biz_index_all_1, na.rm = TRUE))
 ```
 
-## Two-Models Approach With Sorted Group Average Treatment Effects (GATES)
+## TMA
 
-### Rescale The Dataset
-
-We rescale (standardize) the numeric variables before running the
-regression in order to get a clear view on how to interpret the
-results.
-
-```{r}
-preScale <- preProcess(endline1_biz[,3:(ncol(endline1_biz)-1)],
-                       method = c("scale", "center"))
-endline1_biz_scale <- predict(preScale, newdata = endline1_biz)
-```
-
-```{r}
-biz_med <- median(endline1_biz$biz_index_all_1)
-endline1_biz_bin <- endline1_biz %>%
-  mutate(biz_index_all_1 =  ifelse(endline1_biz$biz_index_all_1 > biz_med,
-                                   1,
-                                   0))
-```
-
-
-### Results (using Random Forest)
+### Results
 
 ```{r}
 source("helpers.r")
@@ -89,209 +79,6 @@ tm_gates_biz <- tm_gates("biz_index_all_1", "treatment", endline1_biz,
                          split_ratio = 0.5,
                          cluster="areaid", num.iter=num.iters, ml_method="rf")
 ```
-
-```{r}
-tm_gates_biz_bin <- tm_gates("biz_index_all_1", "treatment", endline1_biz_bin,
-                         split_ratio = 0.5,
-                         cluster="areaid", num.iter=num.iters, ml_method="rf")
-```
-
-```{r}
-library(pdp)
-auxi_contr <- tm_gates_biz[[15]]
-auxi_treat <- tm_gates_biz[[16]]
-```
-
-### PDP For Durables Expenditure
-
-```{r}
-pdp_durable_contr <- tm_gates_biz[[13]] %>%
-  partial(pred.var = "durables_exp_mo_pc_1",
-          chull = TRUE, progress = "text")
-pdp_durable_treat <- tm_gates_biz[[14]] %>%
-  partial(pred.var = "durables_exp_mo_pc_1",
-          chull = TRUE, progress = "text")
-
-pdp_durable_contr[, "yhat_treat"] <- pdp_durable_treat$yhat
-pdp_durable_contr[, "cte"] <- pdp_durable_contr$yhat_treat- pdp_durable_contr$yhat
-
-ggplot() +
-  geom_line(data = pdp_durable_contr, 
-            aes(x=durables_exp_mo_pc_1, y=yhat), color="red") + 
-  geom_line(data = pdp_durable_treat,
-            aes(x=durables_exp_mo_pc_1, y=yhat), color="blue")
-
-pdp_durable <- ggplot() +
-  geom_line(data = pdp_durable_contr, aes(x=durables_exp_mo_pc_1, y=cte))
-```
-
-### PDP For Adjusted Household Size
-
-```{r}
-pdp_hhsize_contr <- tm_gates_biz[[13]] %>%
-  partial(pred.var = "hhsize_adj_1",
-          chull = TRUE, progress = "text")
-pdp_hhsize_treat <- tm_gates_biz[[14]] %>%
-  partial(pred.var = "hhsize_adj_1",
-          chull = TRUE, progress = "text")
-
-pdp_hhsize_contr[, "yhat_treat"] <- pdp_hhsize_treat$yhat
-pdp_hhsize_contr[, "cte"] <- pdp_hhsize_contr$yhat_treat- pdp_hhsize_contr$yhat
-
-
-ggplot() +
-  geom_line(data = pdp_hhsize_contr, 
-            aes(x=hhsize_adj_1, y=yhat), color="red") + 
-  geom_line(data = pdp_hhsize_treat,
-            aes(x=hhsize_adj_1, y=yhat), color="blue")
-
-pdp_hhsize <- ggplot() +
-  geom_line(data = pdp_hhsize_contr, aes(x=hhsize_adj_1, y=cte))
-```
-
-### PDP For Nondurable Expenditure
-
-```{r}
-pdp_nondurable_contr <- tm_gates_biz[[13]] %>%
-  partial(pred.var = "nondurable_exp_mo_pc_1",
-          chull = TRUE, progress = "text")
-pdp_nondurable_treat <- tm_gates_biz[[14]] %>%
-  partial(pred.var = "nondurable_exp_mo_pc_1",
-          chull = TRUE, progress = "text")
-
-pdp_nondurable_contr[, "yhat_treat"] <- pdp_nondurable_treat$yhat
-pdp_nondurable_contr[, "cte"] <- pdp_nondurable_contr$yhat_treat- pdp_nondurable_contr$yhat
-
-ggplot() +
-  geom_line(data = pdp_nondurable_contr, 
-            aes(x=nondurable_exp_mo_pc_1, y=yhat), color="red") + 
-  geom_line(data = pdp_nondurable_treat,
-            aes(x=nondurable_exp_mo_pc_1, y=yhat), color="blue")
-
-pdp_nondurable <- ggplot() +
-  geom_line(data = pdp_nondurable_contr, aes(x=nondurable_exp_mo_pc_1, y=cte))
-```
-
-### PDP For Health Expenditure
-
-```{r}
-pdp_health_contr <- tm_gates_biz[[13]] %>%
-  partial(pred.var = "health_exp_mo_pc_1",
-          chull = TRUE, progress = "text")
-pdp_health_treat <- tm_gates_biz[[14]] %>%
-  partial(pred.var = "health_exp_mo_pc_1",
-          chull = TRUE, progress = "text")
-
-pdp_health_contr[, "yhat_treat"] <- pdp_health_treat$yhat
-pdp_health_contr[, "cte"] <- pdp_health_contr$yhat_treat- pdp_health_contr$yhat
-
-ggplot() +
-  geom_line(data = pdp_health_contr, 
-            aes(x=health_exp_mo_pc_1, y=yhat), color="red") + 
-  geom_line(data = pdp_health_treat,
-            aes(x=health_exp_mo_pc_1, y=yhat), color="blue")
-
-pdp_health <- ggplot() +
-  geom_line(data = pdp_health_contr, aes(x=health_exp_mo_pc_1, y=cte))
-```
-
-### PDP
-
-```{r}
-cowplot::plot_grid(pdp_hhsize, pdp_nondurable, pdp_health, pdp_durable)
-```
-
-
-```{r}
-library(tools4uplift)
-library(uplift)
-```
-
-```{r}
-gates_perf <- uplift::performance(1 - tm_gates_biz[[9]],
-                                  1 - tm_gates_biz[[8]],
-                                  tm_gates_biz[[7]]$biz_index_all_1,
-                                  tm_gates_biz[[7]]$treatment)
-uplift::qini(gates_perf, direction = 1, plotit = TRUE)
-```
-
-```{r}
-apply(tm_gates_biz[[2]], 2, median)
-apply(tm_gates_biz[[3]], 2, median)
-apply(tm_gates_biz[[4]], 2, median)
-apply(tm_gates_biz[[5]], 2, median)
-```
-
-```{r}
-ave_dur_exp_plot_data <- cbind(data.frame(apply(tm_gates_biz[[2]], 2, median)), c("G1", "G2", "G3", "G4", "G5"))
-colnames(ave_dur_exp_plot_data) <- c("ave_dur_exp", "group")
-ggplot(ave_dur_exp_plot_data, aes(x=group, y=ave_dur_exp, label=ave_dur_exp)) + 
-  geom_col() + 
-  geom_text(aes(label=round(ave_dur_exp)), hjust=0, vjust=-2) +
-  labs(x = "Group", y = "Average Durable Expenditure (mo/pc)") +
-  ylim(0, 100)
-```
-
-```{r}
-ave_loan_amt_plot_data <- cbind(data.frame(apply(tm_gates_biz[[3]], 2, median)), c("G1", "G2", "G3", "G4", "G5"))
-colnames(ave_loan_amt_plot_data) <- c("ave_loan_amt_exp", "group")
-ggplot(ave_loan_amt_plot_data, aes(x=group, y=ave_loan_amt_exp, label=ave_loan_amt_exp)) + 
-  geom_col() +
-  geom_text(aes(label=round(ave_loan_amt_exp)), hjust=0, vjust=-2) +
-  labs(x = "Group", y = "Average Loan Amount") +
-  ylim(0, 150000)
-```
-
-```{r}
-ave_nondur_exp_plot_data <- cbind(data.frame(apply(tm_gates_biz[[4]], 2, median)), c("G1", "G2", "G3", "G4", "G5"))
-colnames(ave_nondur_exp_plot_data) <- c("ave_nondur_exp", "group")
-ggplot(ave_nondur_exp_plot_data, aes(x=group, y=ave_nondur_exp, label=ave_nondur_exp)) + 
-  geom_col() + 
-  geom_text(aes(label=round(ave_nondur_exp)), hjust=0, vjust=-2) +
-  labs(x = "Group", y = "Average Nondurable Expenditure (mo/pc)") +
-  ylim(0, 1800)
-```
-
-```{r}
-ave_food_exp_plot_data <- cbind(data.frame(apply(tm_gates_biz[[5]], 2, median)), c("G1", "G2", "G3", "G4", "G5"))
-colnames(ave_food_exp_plot_data) <- c("ave_food_exp", "group")
-ggplot(ave_food_exp_plot_data, aes(x=group, y=ave_food_exp, label=ave_food_exp)) + 
-  geom_col() + 
-  geom_text(aes(label=round(ave_food_exp)), hjust=0, vjust=-2) +
-  labs(x = "Group", y = "Average Food Expenditure (mo/pc)") +
-  ylim(0, 700)
-```
-
-```{r}
-ave_health_exp_plot_data <- cbind(data.frame(apply(tm_gates_biz[[6]], 2, median)), c("G1", "G2", "G3", "G4", "G5"))
-colnames(ave_health_exp_plot_data) <- c("ave_health_exp", "group")
-ggplot(ave_health_exp_plot_data, aes(x=group, y=ave_health_exp, label=ave_health_exp)) + 
-  geom_col() + 
-  geom_text(aes(label=round(ave_health_exp)), hjust=0, vjust=-2) +
-  labs(x = "Group", y = "Average Health Expenditure (mo/pc)") +
-  ylim(0, 100)
-```
-
-```{r}
-ave_hhsize_adj_plot_data <- cbind(data.frame(apply(tm_gates_biz[[7]], 2, median)), c("G1", "G2", "G3", "G4", "G5"))
-colnames(ave_hhsize_adj_plot_data) <- c("ave_hhsize_adj", "group")
-ggplot(ave_hhsize_adj_plot_data, aes(x=group, y=ave_hhsize_adj, label=ave_hhsize_adj)) + 
-  geom_col() + 
-  geom_text(aes(label=round(ave_hhsize_adj, 5)), hjust=0, vjust=-2) +
-  labs(x = "Group", y = "Average Household Size (adjusted)") +
-  ylim(0, 6)
-```
-
-```{r}
-ave_head_age_plot_data <- cbind(data.frame(apply(tm_gates_biz[[8]], 2, median)), c("G1", "G2", "G3", "G4", "G5"))
-colnames(ave_head_age_plot_data) <- c("ave_head_age", "group")
-ggplot(ave_head_age_plot_data, aes(x=group, y=ave_head_age, label=ave_head_age)) + 
-  geom_col() + 
-  geom_text(aes(label=round(ave_head_age, 5)), hjust=0, vjust=-2) +
-  labs(x = "Group", y = "Average Head Age") +
-  ylim(0, 80)
-```
-
 
 ### GATES
 
@@ -312,7 +99,7 @@ colnames(gates_plot_data) <- c("G", "F", "U", "L")
 bp_plot_data <- data.frame(matrix(NA, ncol = 4, nrow = 10))
 bp_plot_data[,1] <- c(-Inf, Inf)
 for (i in 1:3) {
-  bp_plot_data[,i+1] <- median(tm_gates_biz[[9]][, i])
+  bp_plot_data[,i+1] <- median(tm_gates_biz[[2]][, i])
 }
 colnames(bp_plot_data) <- c("x", "ATE", "L", "U")
 ```
@@ -360,7 +147,491 @@ ggplot() +
         legend.background=element_rect(fill=alpha('blue', 0)))  +
   ylim(range(-0.3, 0.5)) +
   labs(title="GATES with Random Forest on Business Index", 
+       y = "Treatment Effect", x = "Group")
+```
+
+### Variable Importance
+
+```{r}
+set.seed(111)
+main <- tm_gates_biz[[3]]
+tm_rf_biz <- randomForest(cte ~ . -treatment-areaid-baseline-G1-G2-G3-G4-G5-biz_index_all_1-prop_score-treat_group-prop_offset-weight-cte_ort-treatment_ort,
+                          data = main,
+                          ntree = 3000,
+                          mtry = 3,
+                          replace = TRUE,
+                          type="regression")
+
+varImpPlot(tm_rf_biz, n.var = 20, main="TMA Variable Importance")
+```
+
+### Prepare For The Plots
+
+```{r}
+tm_rf_biz_names <- c("Health Expenditure (mo/pc)",
+                     "Temptation Expenditure (mo/pc)",
+                     "Household Size (adjusted)",
+                     "Amount of Bank Loan")
+
+tm_rf_biz_pred <- predict(tm_rf_biz, newdata=main)
+main[, "preds"] <- tm_rf_biz_pred
+```
+
+
+### Trend Plots
+
+```{r}
+tm_trend_plots(tm_rf_biz, main, tm_rf_biz_names)
+```
+
+### PDP
+
+```{r}
+tm_pdp_tmp <- function(model, data, target_var, x_lab) {
+  pdp_rf_biz <- partial(model, pred.var = target_var,
+                        chull = TRUE, progress = "text", train = data)
+
+  pdp <- ggplot() +
+    theme_gray(base_size = 14) +
+    geom_line(data = pdp_rf_biz, aes_string(x=target_var, y="yhat")) +
+    theme(plot.title = element_text(hjust = 0.5,size = 14, face = "bold"),
+          axis.title=element_text(size=14),
+          axis.text=element_text(size=14)) +
+    scale_x_continuous(labels = scales::comma) +
+    labs(#title="PDP Of Two-models Approach",
+      x=x_lab, y="pred. CTE")
+  return(pdp)
+}
+
+
+tm_pdp_tmp(tm_rf_biz, main, "nondurable_exp_mo_pc_1", "Nondurable Expenditure (mo/pc)")
+tm_pdp_tmp(tm_rf_biz, main, "durables_exp_mo_pc_1", "Durables Expenditure (mo/pc)")
+#tm_pdp_plots(tm_rf_biz, main, tm_rf_biz_names)
+```
+
+### Transformed Outcome Loss
+
+```{r}
+# transformed outcome : 
+main$biz_index_transformed <- (main$treatment - main$prop_score) / main$prop_score*(1 - main$prop_score) * main$biz_index_all_1
+
+# transformed outcome loss : 
+biz_loss <- sum((main$pred_cte - main$biz_index_transformed)^2) / nrow(main)
+biz_loss
+```
+
+## TMA w/o Expenditure
+
+### Results
+
+```{r}
+source("helpers.r")
+num.iters <- 10
+tm_gates_biz_noexp <- tm_gates("biz_index_all_1", "treatment", endline1_biz_noexp,
+                               split_ratio = 0.5,
+                               cluster="areaid", num.iter = num.iters, ml_method = "rf")
+```
+
+### GATES
+
+```{r}
+alpha <- 0.05
+groups <- 5
+gates_plot_biz_noexp <- data.frame(matrix(NA, ncol = 4, nrow = groups))
+gates_plot_biz_noexp[, 1] <- c("1", "2", "3", "4", "5")
+for (i in 1:5) {
+  gates_plot_biz_noexp[i, 2] <- median(tm_gates_biz_noexp[[1]][, i])
+  gates_plot_biz_noexp[i, 3] <- median(tm_gates_biz_noexp[[1]][, i+5])
+  gates_plot_biz_noexp[i, 4] <- median(tm_gates_biz_noexp[[1]][, i+10])
+}
+colnames(gates_plot_biz_noexp) <- c("G", "F", "U", "L")
+```
+
+```{r}
+bp_plot_biz_noexp <- data.frame(matrix(NA, ncol = 4, nrow = 10))
+bp_plot_biz_noexp[,1] <- c(-Inf, Inf)
+for (i in 1:3) {
+  bp_plot_biz_noexp[,i+1] <- median(tm_gates_biz_noexp[[2]][, i])
+}
+colnames(bp_plot_biz_noexp) <- c("x", "ATE", "L", "U")
+```
+
+```{r}
+ggplot() + 
+  theme_gray(base_size = 14) +
+  geom_point(data=gates_plot_biz_noexp,
+             aes(y = F, x = G, colour='GATES'),
+             size = 3) +
+  geom_errorbar(data=gates_plot_biz_noexp,
+                aes(ymax = U, ymin = L ,
+                    x = G, width=0.7, colour="90% CB(GATES)"),
+                show.legend = TRUE) +
+  geom_line(aes(x = x, y = ATE, 
+                linetype = cutoff, 
+                colour='ATE'), 
+            bp_plot_biz_noexp, 
+            linetype = 2) +
+  geom_line(aes(x = x, y = U, 
+                linetype = cutoff, 
+                colour='90% CB(ATE)'), 
+            bp_plot_biz_noexp, 
+            linetype = 2) +
+  geom_line(aes(x = x, y = L, 
+                linetype = cutoff), 
+            bp_plot_biz_noexp, 
+            linetype = 2,
+            color = "red") +
+  scale_colour_manual(values = c("red", "black", "blue", "black"),
+                      breaks=c('ATE','90% CB(ATE)',"GATES",'90% CB(GATES)'),
+                      guide = guide_legend(override.aes = list(
+                        linetype = c("dashed", "dashed"  ,"blank", "solid"),
+                        shape = c(NA,NA, 16, NA)), 
+                        ncol =2,
+                        byrow=TRUE)) +
+  theme(plot.title = element_text(hjust = 0.5,size = 11, face = "bold"),
+        axis.title=element_text(size=10), 
+        legend.text=element_text(size=7), 
+        legend.key = element_rect(colour = NA, fill = NA), 
+        legend.key.size = unit(1, 'lines'),
+        legend.title=element_blank(),
+        legend.justification=c(0,1), 
+        legend.position=c(0,1), 
+        legend.background=element_rect(fill=alpha('blue', 0)))  +
+  ylim(range(-0.3, 0.5)) +
+  labs(title="GATES with Random Forest on Business Index", 
        y = "Treatment Effect", x = "Group by Het Score")
+```
+
+### Variable Importance
+
+```{r}
+set.seed(111)
+main <- tm_gates_biz_noexp[[3]]
+tm_rf_biz_noexp <- randomForest(cte ~ . -treatment-areaid-baseline-G1-G2-G3-G4-G5-biz_index_all_1-prop_score-treat_group-prop_offset-weight-cte_ort-treatment_ort,
+                          data = main,
+                          ntree = 3000,
+                          mtry = 3,
+                          replace = TRUE,
+                          type="regression")
+
+varImpPlot(tm_rf_biz_noexp, n.var = 20, main="TMA Variable Importance")
+```
+
+### Prepare For The Plots
+
+```{r}
+tm_rf_biz_noexp_names <- c("Amount of Bank Loan",
+                           "Household Size (adjusted)",
+                           "Amount of Informal Loan",
+                           "Age of Household Head")
+
+tm_rf_biz_noexp_pred <- predict(tm_rf_biz_noexp, newdata=main)
+main[, "preds"] <- tm_rf_biz_noexp_pred
+```
+
+### Trend Plots
+
+```{r}
+tm_trend_plots(tm_rf_biz_noexp, main, tm_rf_biz_noexp_names)
+```
+
+### PDP
+
+```{r}
+tm_pdp_plots(tm_rf_biz_noexp, main, tm_rf_biz_noexp_names)
+```
+
+### Transformed Outcome Loss
+```{r}
+# transformed outcome : 
+main$biz_index_transformed <- (main$treatment - main$prop_score) / main$prop_score*(1 - main$prop_score) * main$biz_index_all_1
+
+# transformed outcome loss : 
+biz_loss <- sum((main$cte - main$biz_index_transformed)^2) / nrow(main)
+biz_loss
+```
+
+# Women Empowerment Index
+
+## Prepare The Dataset
+
+```{r}
+target_index <- "women_emp_index_1"
+
+endline1_woemp <- endline1 %>%
+  select(everything(),
+         -hhid,
+         -contains("index"), # prevent confounding
+         -anyloan_1,
+         -anyloan_amt_1,
+         target_index)       # add target index
+
+endline1_woemp_noexp <- endline1 %>%
+  select(everything(),
+         -hhid,
+         -contains("exp"),
+         -contains("index"), # prevent confounding
+         -anyloan_1,
+         -anyloan_amt_1,
+         target_index)       # add target index
+```
+
+## TMA
+
+```{r}
+source("helpers.r")
+num.iters <- 10
+tm_gates_woemp <- tm_gates("women_emp_index_1", "treatment", endline1_woemp,
+                           split_ratio = 0.5,
+                           cluster="areaid", num.iter=num.iters, ml_method="rf")
+```
+
+### GATES
+
+```{r}
+alpha <- 0.05
+groups <- 5
+gates_plot_woemp <- data.frame(matrix(NA, ncol = 4, nrow = groups))
+gates_plot_woemp[, 1] <- c("1", "2", "3", "4", "5")
+for (i in 1:5) {
+  gates_plot_woemp[i, 2] <- median(tm_gates_woemp[[1]][, i])
+  gates_plot_woemp[i, 3] <- median(tm_gates_woemp[[1]][, i+5])
+  gates_plot_woemp[i, 4] <- median(tm_gates_woemp[[1]][, i+10])
+}
+colnames(gates_plot_woemp) <- c("G", "F", "U", "L")
+```
+
+```{r}
+bp_plot_woemp <- data.frame(matrix(NA, ncol = 4, nrow = 10))
+bp_plot_woemp[,1] <- c(-Inf, Inf)
+for (i in 1:3) {
+  bp_plot_woemp[,i+1] <- median(tm_gates_woemp[[2]][, i])
+}
+colnames(bp_plot_woemp) <- c("x", "ATE", "L", "U")
+```
+
+```{r}
+ggplot() + 
+  theme_gray(base_size = 14) +
+  geom_point(data=gates_plot_woemp,
+             aes(y = F, x = G, colour='GATES'),
+             size = 3) +
+  geom_errorbar(data=gates_plot_woemp,
+                aes(ymax = U, ymin = L ,
+                    x = G, width=0.7, colour="90% CB(GATES)"),
+                show.legend = TRUE) +
+  geom_line(aes(x = x, y = ATE, 
+                linetype = cutoff, 
+                colour='ATE'), 
+            bp_plot_woemp, 
+            linetype = 2) +
+  geom_line(aes(x = x, y = U, 
+                linetype = cutoff, 
+                colour='90% CB(ATE)'), 
+            bp_plot_woemp, 
+            linetype = 2) +
+  geom_line(aes(x = x, y = L, 
+                linetype = cutoff), 
+            bp_plot_woemp, 
+            linetype = 2,
+            color = "red") +
+  scale_colour_manual(values = c("red", "black", "blue", "black"),
+                      breaks=c('ATE','90% CB(ATE)',"GATES",'90% CB(GATES)'),
+                      guide = guide_legend(override.aes = list(
+                        linetype = c("dashed", "dashed"  ,"blank", "solid"),
+                        shape = c(NA,NA, 16, NA)), 
+                        ncol =2,
+                        byrow=TRUE)) +
+  theme(plot.title = element_text(hjust = 0.5,size = 11, face = "bold"),
+        axis.title=element_text(size=10), 
+        legend.text=element_text(size=7), 
+        legend.key = element_rect(colour = NA, fill = NA), 
+        legend.key.size = unit(1, 'lines'),
+        legend.title=element_blank(),
+        legend.justification=c(0,1), 
+        legend.position=c(0,1), 
+        legend.background=element_rect(fill=alpha('blue', 0)))  +
+  ylim(range(-0.3, 0.5)) +
+  labs(title="GATES with Random Forest on Women Empowerment Index", 
+       y = "Treatment Effect", x = "Group by Het Score")
+```
+
+### Variable Importance
+
+```{r}
+set.seed(111)
+main <- tm_gates_woemp[[3]]
+tm_rf_woemp <- randomForest(cte ~ . -treatment-areaid-baseline-G1-G2-G3-G4-G5-women_emp_index_1-prop_score-treat_group-prop_offset-weight-cte_ort-treatment_ort,
+                          data = main,
+                          ntree = 3000,
+                          mtry = 3,
+                          replace = TRUE,
+                          type="regression")
+
+varImpPlot(tm_rf_woemp, n.var = 20, main="TMA Variable Importance")
+```
+
+### Prepare For The Plots
+
+```{r}
+tm_rf_woemp_names <- c("Household Size (adjusted)",
+                       "Temptation Expenditure (mo/pc)",
+                       "Nondurable Expenditure (mo/pc)",
+                       "Num. Adults")
+
+tm_rf_woemp_pred <- predict(tm_rf_woemp, newdata=main)
+main[, "preds"] <- tm_rf_woemp_pred
+```
+
+### Trend Plots
+
+```{r}
+tm_trend_plots(tm_rf_woemp, main, tm_rf_woemp_names)
+```
+
+### PDP
+
+```{r}
+tm_pdp_plots(tm_rf_woemp, main, tm_rf_woemp_names)
+```
+
+### Transformed Outcome Loss
+```{r}
+# transformed outcome : 
+main$woemp_index_transformed <- (main$treatment - main$prop_score) / main$prop_score*(1 - main$prop_score) * main$women_emp_index_1
+
+# transformed outcome loss : 
+woemp_loss <- sum((main$preds - main$woemp_index_transformed)^2) / nrow(main)
+woemp_loss
+```
+
+## TMA w/o Expenditure
+
+```{r}
+source("helpers.r")
+num.iters <- 10
+tm_gates_woemp_noexp <- tm_gates("women_emp_index_1", "treatment", endline1_woemp_noexp,
+                                 split_ratio = 0.5,
+                                 cluster="areaid", num.iter=num.iters, ml_method="rf")
+```
+
+### GATES
+
+```{r}
+alpha <- 0.05
+groups <- 5
+gates_plot_woemp <- data.frame(matrix(NA, ncol = 4, nrow = groups))
+gates_plot_woemp[, 1] <- c("1", "2", "3", "4", "5")
+for (i in 1:5) {
+  gates_plot_woemp[i, 2] <- median(tm_gates_woemp_noexp[[1]][, i])
+  gates_plot_woemp[i, 3] <- median(tm_gates_woemp_noexp[[1]][, i+5])
+  gates_plot_woemp[i, 4] <- median(tm_gates_woemp_noexp[[1]][, i+10])
+}
+colnames(gates_plot_woemp) <- c("G", "F", "U", "L")
+```
+
+```{r}
+bp_plot_woemp <- data.frame(matrix(NA, ncol = 4, nrow = 10))
+bp_plot_woemp[,1] <- c(-Inf, Inf)
+for (i in 1:3) {
+  bp_plot_woemp[,i+1] <- median(tm_gates_woemp_noexp[[2]][, i])
+}
+colnames(bp_plot_woemp) <- c("x", "ATE", "L", "U")
+```
+
+```{r}
+ggplot() + 
+  theme_gray(base_size = 14) +
+  geom_point(data=gates_plot_woemp,
+             aes(y = F, x = G, colour='GATES'),
+             size = 3) +
+  geom_errorbar(data=gates_plot_woemp,
+                aes(ymax = U, ymin = L ,
+                    x = G, width=0.7, colour="90% CB(GATES)"),
+                show.legend = TRUE) +
+  geom_line(aes(x = x, y = ATE, 
+                linetype = cutoff, 
+                colour='ATE'), 
+            bp_plot_woemp, 
+            linetype = 2) +
+  geom_line(aes(x = x, y = U, 
+                linetype = cutoff, 
+                colour='90% CB(ATE)'), 
+            bp_plot_woemp, 
+            linetype = 2) +
+  geom_line(aes(x = x, y = L, 
+                linetype = cutoff), 
+            bp_plot_woemp, 
+            linetype = 2,
+            color = "red") +
+  scale_colour_manual(values = c("red", "black", "blue", "black"),
+                      breaks=c('ATE','90% CB(ATE)',"GATES",'90% CB(GATES)'),
+                      guide = guide_legend(override.aes = list(
+                        linetype = c("dashed", "dashed"  ,"blank", "solid"),
+                        shape = c(NA,NA, 16, NA)), 
+                        ncol =2,
+                        byrow=TRUE)) +
+  theme(plot.title = element_text(hjust = 0.5,size = 11, face = "bold"),
+        axis.title=element_text(size=10), 
+        legend.text=element_text(size=7), 
+        legend.key = element_rect(colour = NA, fill = NA), 
+        legend.key.size = unit(1, 'lines'),
+        legend.title=element_blank(),
+        legend.justification=c(0,1), 
+        legend.position=c(0,1), 
+        legend.background=element_rect(fill=alpha('blue', 0)))  +
+  ylim(range(-0.3, 0.5)) +
+  labs(title="GATES with Random Forest on Women Empowerment Index", 
+       y = "Treatment Effect", x = "Group by Het Score")
+```
+
+### Variable Importance
+
+```{r}
+set.seed(111)
+main <- tm_gates_woemp_noexp[[3]]
+tm_rf_woemp_noexp <- randomForest(cte ~ . -treatment-areaid-baseline-G1-G2-G3-G4-G5-women_emp_index_1-prop_score-treat_group-prop_offset-weight-cte_ort-treatment_ort,
+                          data = main,
+                          ntree = 3000,
+                          mtry = 3,
+                          replace = TRUE,
+                          type="regression")
+
+varImpPlot(tm_rf_woemp_noexp, n.var = 20, main="TMA Variable Importance")
+```
+
+### Prepare For The Plots
+
+```{r}
+tm_rf_woemp_noexp_names <- c("Household Size (adjusted)",
+                             "Num. Adults",
+                             "Head Age",
+                             "Hours Of Work (Outside)")
+
+tm_rf_woemp_noexp_pred <- predict(tm_rf_woemp_noexp, newdata=main)
+main[, "preds"] <- tm_rf_woemp_noexp_pred
+```
+
+### Trend Plots
+
+```{r}
+tm_trend_plots(tm_rf_woemp_noexp, main, tm_rf_woemp_noexp_names)
+```
+
+### PDP
+
+```{r}
+tm_pdp_plots(tm_rf_woemp_noexp, main, tm_rf_woemp_noexp_names)
+```
+
+### Transformed Outcome Loss
+```{r}
+# transformed outcome : 
+main$woemp_index_transformed <- (main$treatment - main$prop_score) / main$prop_score*(1 - main$prop_score) * main$women_emp_index_1
+
+# transformed outcome loss : 
+woemp_loss <- sum((main$cte - main$woemp_index_transformed)^2) / nrow(main)
+woemp_loss
 ```
 
 # CAUSAL FOREST
@@ -368,6 +639,8 @@ ggplot() +
 ## Business Index
 
 ```{r}
+target_index <- "biz_index_all_1"
+
 # test/train
 set.seed(123)
 idx.train <- caret::createDataPartition(y = endline1_biz$treatment, p = 0.70, list = FALSE) 
@@ -388,7 +661,7 @@ forest <- causal_forest(
   W,
   clusters = X.clusters,
   mtry = 3, 
-  num.trees = 5000,
+  num.trees = 3000,
   honesty = TRUE,
   seed = 234)
 ```
@@ -412,6 +685,81 @@ preds <- predict(
 test$preds <- preds$predictions
 trend_plots(forest, test)
 ```
+
+```{r}
+target_var <- "informal_amt_1"
+pdp_title <- "Informal Loan Amount"
+crf_pdp <- partial(forest, pred.var = target_var, 
+                   chull = TRUE, progress = "text",
+                   train = model.matrix(~., data = X))
+
+pdp <- ggplot() +
+  theme_gray(base_size = 14) +
+  geom_line(data = crf_pdp, aes_string(x=target_var, y="yhat")) +
+  theme(plot.title = element_text(hjust = 0.5,size = 11, face = "bold"),
+        axis.title=element_text(size=14), 
+        legend.text=element_text(size=7), 
+        legend.key = element_rect(colour = NA, fill = NA), 
+        legend.key.size = unit(1, 'lines'),
+        legend.title=element_blank(),
+        legend.justification=c(0,1), 
+        legend.position=c(0,1), 
+        legend.background=element_rect(fill=alpha('blue', 0))) +
+  labs(x=pdp_title, y="Conditional Treatment Effect")
+pdp
+```
+```{r}
+
+```
+
+### Qini Score of Causal Random Forset
+
+```{r}
+target_index <- "biz_index_all_1"
+
+# test/train
+set.seed(123)
+idx.train <- caret::createDataPartition(y = endline1_biz_bin$treatment, p = 0.70, list = FALSE) 
+train <- endline1_biz[idx.train, ] # training set
+test <-  endline1_biz[-idx.train, ]
+
+# train data
+Y <- train$biz_index_all_1
+X <- train %>% 
+  select(-treatment, -target_index, -areaid)
+X.clusters <- train$areaid
+W <- train$treatment
+
+# model
+forest <- causal_forest(
+  model.matrix(~., data = X),
+  Y,
+  W,
+  clusters = X.clusters,
+  mtry = 3, 
+  num.trees = 3000,
+  honesty = TRUE,
+  seed = 234)
+```
+
+```{r}
+# test data
+test_Y <- test$biz_index_all_1
+test_X <- test %>% 
+  select(-treatment, -target_index, -areaid)
+test_clusters <- test$areaid
+test_W <- test$treatment
+
+# prediction
+preds <- predict(
+  object = forest,
+  newdata = model.matrix(~ ., data = test_X, estimate.variance = TRUE))
+test$preds <- preds$predictions
+
+QiniCurve(QiniTable(test, "treatment", "biz_index_all_1", "preds"))
+```
+
+
 
 ```{r}
 # test/train

@@ -1,6 +1,7 @@
 library(readstata13)
 library(tidyverse)
 library(outliers)
+library(pdp)
 
 # Analyze The Missing Values
 na_table <- function(x) {
@@ -82,14 +83,31 @@ load_endline1 <- function() {
 
   endline1 <- na.omit(endline1)
 
-  exp_col <- endline1 %>%
-    select(contains("exp_mo_pc")) %>%
-    colnames()
-  for (covar in exp_col) {
-    covar_outlier <- scores(x = endline1[, covar], type = "iqr", lim = 5)
-    endline1 <- endline1[!covar_outlier, ]
-  }
+  #exp_col <- endline1 %>%
+  #  select(contains("exp_mo_pc")) %>%
+  #  colnames()
+  #for (covar in exp_col) {
+  #  covar_outlier <- scores(x = endline1[, covar], type = "iqr", lim = 5)
+  #  endline1 <- endline1[!covar_outlier, ]
+  #}
 
+  endline1 <- endline1[-which.max(endline1$anyloan_amt_1), ]
+  endline1 <- endline1[-which.max(endline1$anyloan_amt_1), ]
+  endline1 <- endline1[-which.max(endline1$anyloan_amt_1), ]
+  endline1 <- endline1[-which.max(endline1$informal_amt_1),]
+  endline1 <- endline1[-which.max(endline1$informal_amt_1),]
+
+  endline1$anyloan_amt_1 <- endline1$anyloan_amt_1 / 9.1768
+  endline1$spandana_amt_1 <- endline1$spandana_amt_1 / 9.1768
+  endline1$othermfi_amt_1 <- endline1$othermfi_amt_1 / 9.1768
+  endline1$bank_amt_1 <- endline1$bank_amt_1 / 9.1768
+  endline1$informal_amt_1 <- endline1$informal_amt_1 / 9.1768
+  endline1$durables_exp_mo_pc_1 <- endline1$durables_exp_mo_pc_1 / 9.1768
+  endline1$nondurable_exp_mo_pc_1 <- endline1$durables_exp_mo_pc_1 / 9.1768
+  endline1$food_exp_mo_pc_1 <- endline1$food_exp_mo_pc_1 / 9.1768
+  endline1$health_exp_mo_pc_1 <- endline1$health_exp_mo_pc_1 / 9.1768
+  endline1$temptation_exp_mo_pc_1 <- endline1$temptation_exp_mo_pc_1 / 9.1768
+  endline1$festival_exp_mo_pc_1 <- endline1$festival_exp_mo_pc_1 / 9.1768
   return(endline1)
 }
 
@@ -103,14 +121,7 @@ tm_gates <- function(target, treatment, data,
   # a list to store the results
   results <- list()
   results_gates <- data.frame(matrix(NA, ncol = 15, nrow = num.iter))
-  results_gates_durable_exp <- data.frame((matrix(NA, ncol = 5, nrow = num.iter)))
-  results_gates_anyloan_exp <- data.frame((matrix(NA, ncol = 5, nrow = num.iter)))
-  results_gates_nondura_exp <- data.frame((matrix(NA, ncol = 5, nrow = num.iter)))
-  results_gates_food_exp <- data.frame((matrix(NA, ncol = 5, nrow = num.iter)))
-  results_gates_health_exp <- data.frame((matrix(NA, ncol = 5, nrow = num.iter)))
-  results_gates_hhsize_adj <- data.frame((matrix(NA, ncol = 5, nrow = num.iter)))
-  results_gates_head_age <- data.frame((matrix(NA, ncol = 5, nrow = num.iter)))
-  results_bp <- data.frame((matrix(NA, ncol = 3, nrow = num.iter)))
+  results_bp <- data.frame(matrix(NA, ncol = 3, nrow = num.iter))
 
   # TODO implement user specified num.groups
   num.groups <- 5
@@ -247,42 +258,6 @@ tm_gates <- function(target, treatment, data,
     results_gates[i, 6:10] <- sort(mean+crit*sd)
     results_gates[i, 11:15] <- sort(mean-crit*sd)
 
-    # analyze the features of each group
-    sorted_groups <- names(sort(mean))
-    feature_table <- main %>%
-      mutate(group = case_when(
-        G1 != 0 ~ "G1",
-        G2 != 0 ~ "G2",
-        G3 != 0 ~ "G3",
-        G4 != 0 ~ "G4",
-        G5 != 0 ~ "G5",
-        TRUE ~ "None"
-      )) %>%
-      mutate(sorted_group = case_when(
-        group == sorted_groups[1] ~ "1",
-        group == sorted_groups[2] ~ "2",
-        group == sorted_groups[3] ~ "3",
-        group == sorted_groups[4] ~ "4",
-        group == sorted_groups[5] ~ "5",
-        TRUE ~ "None"
-      )) %>%
-      group_by(sorted_group) %>%
-      summarize("ave_dur_exp_mo_pc" = mean(durables_exp_mo_pc_1),
-                "ave_anyloan_amt" = mean(anyloan_amt_1),
-                "ave_nondur_exp_mo_pc" = mean(nondurable_exp_mo_pc_1),
-                "ave_food_exp_mo_pc" = mean(food_exp_mo_pc_1),
-                "ave_health_exp_mo_pc" = mean(health_exp_mo_pc_1),
-                "ave_hhsize_adj" = mean(hhsize_adj_1),
-                "ave_head_age" = mean(head_age_1))
-
-    results_gates_durable_exp[i, ] <- feature_table %>% pull("ave_dur_exp_mo_pc")
-    results_gates_anyloan_exp[i, ] <- feature_table %>% pull("ave_anyloan_amt")
-    results_gates_nondura_exp[i, ] <- feature_table %>% pull("ave_nondur_exp_mo_pc")
-    results_gates_food_exp[i, ]    <- feature_table %>% pull("ave_food_exp_mo_pc")
-    results_gates_health_exp[i, ]  <- feature_table %>% pull("ave_health_exp_mo_pc")
-    results_gates_hhsize_adj[i, ]  <- feature_table %>% pull("ave_hhsize_adj")
-    results_gates_head_age[i, ]    <- feature_table %>% pull("ave_head_age")
-
     # 3. Best Linear Predictor
     Sd <- main$cte- mean(main$cte)
     main$cte_ort <- I((main$treatment-main$prop_score)*Sd)
@@ -306,21 +281,14 @@ tm_gates <- function(target, treatment, data,
   }
   results <- list()
   results[[1]] <- results_gates
-  results[[2]] <- results_gates_durable_exp
-  results[[3]] <- results_gates_anyloan_exp
-  results[[4]] <- results_gates_nondura_exp
-  results[[5]] <- results_gates_food_exp
-  results[[6]] <- results_gates_health_exp
-  results[[7]] <- results_gates_hhsize_adj
-  results[[8]] <- results_gates_head_age
-  results[[9]] <- results_bp
-  results[[10]] <- main
-  results[[11]] <- main_yi0
-  results[[12]] <- main_yi1
-  results[[13]] <- auxi_yi0
-  results[[14]] <- auxi_yi1
-  results[[15]] <- auxi_contr
-  results[[16]] <- auxi_treat
+  results[[2]] <- results_bp
+  results[[3]] <- main
+  results[[4]] <- main_yi0
+  results[[5]] <- main_yi1
+  results[[6]] <- auxi_yi0
+  results[[7]] <- auxi_yi1
+  results[[8]] <- auxi_contr
+  results[[9]] <- auxi_treat
   return(results)
 }
 
@@ -353,8 +321,54 @@ var_imp_plot <- function(forest, decay.exponent = 2L, max.depth = 4L) {
     coord_flip() +
     ggtitle('Variable Importance') +
     theme_bw() +
-    theme(plot.title = element_text(hjust = 0.5))
+    theme(plot.title = element_text(hjust = 0.5)) +
   print(p)
+}
+
+tm_trend_plots <- function(tm_rf, test, x_names) {
+  # Get the variable importance table
+  var_imp <- tm_rf %>%
+    importance() %>%
+    as.data.frame() %>%
+    mutate(var_name = row.names(.)) %>%
+    arrange(desc(IncNodePurity))
+  # Get the Name of each variable
+  if (is.null(x_names)) {
+    x_names <- list()
+    x_names[1] <- var_imp$var_name[1]
+    x_names[2] <- var_imp$var_name[2]
+    x_names[3] <- var_imp$var_name[3]
+    x_names[4] <- var_imp$var_name[4]
+  }
+  # for the first four most important variable
+  # create a plot that shows if there are trend of correlation
+  p1 <- ggplot(test, aes(x = test[, var_imp$var_name[1]], y = preds)) +
+    geom_point() +
+    geom_smooth(method = "loess", span = 1) +
+    theme_light() +
+    scale_x_continuous(labels = scales::comma) +
+    labs(x = x_names[1], y = "pred. CTE")
+  p2 <- ggplot(test, aes(x = test[, var_imp$var_name[2]], y = preds)) +
+    geom_point() +
+    geom_smooth(method = "loess", span = 1) +
+    theme_light() +
+    scale_x_continuous(labels = scales::comma) +
+    labs(x = x_names[2], y = "pred. CTE")
+  p3 <- ggplot(test, aes(x = test[, var_imp$var_name[3]], y = preds)) +
+    geom_point() +
+    geom_smooth(method = "loess", span = 1) +
+    theme_light() +
+    scale_x_continuous(labels = scales::comma) +
+    labs(x = x_names[3], y = "pred. CTE")
+  p4 <- ggplot(test, aes(x = test[, var_imp$var_name[4]], y = preds)) +
+    geom_point() +
+    geom_smooth(method = "loess", span = 1) +
+    theme_light() +
+    scale_x_continuous(labels = scales::comma) +
+    labs(x = x_names[4], y = "pred. CTE")
+
+  # combine those plots
+  cowplot::plot_grid(p1, p2, p3, p4, ncol = 2)
 }
 
 # Plot the Trend of Variables to CATE
@@ -365,6 +379,7 @@ trend_plots <- function(crf, test) {
     as.data.frame() %>%
     mutate(variable = colnames(crf$X.orig)) %>%
     arrange(desc(V1))
+
   # for the first four most important variable
   # create a plot that shows if there are trend of correlation
   p1 <- ggplot(test, aes(x = test[, var_imp$variable[1]], y = preds)) +
@@ -388,6 +403,46 @@ trend_plots <- function(crf, test) {
     theme_light() +
     labs(x = var_imp$variable[4], y = "pred. CTE")
 
+  # combine those plots
+  cowplot::plot_grid(p1, p2, p3, p4, ncol = 2)
+}
+
+tm_pdp <- function(model, data, target_var, x_lab) {
+  pdp_rf_biz <- partial(model, pred.var = target_var,
+                        chull = TRUE, progress = "text", train = data)
+
+  pdp <- ggplot() +
+    theme_gray(base_size = 14) +
+    geom_line(data = pdp_rf_biz, aes_string(x=target_var, y="yhat")) +
+    theme(plot.title = element_text(hjust = 0.5,size = 14, face = "bold"),
+          axis.title=element_text(size=10),
+          axis.text=element_text(size=8)) +
+    scale_x_continuous(labels = scales::comma) +
+    labs(#title="PDP Of Two-models Approach",
+      x=x_lab, y="pred. CTE")
+  return(pdp)
+}
+
+tm_pdp_plots <- function(tm_rf, data, x_names=NULL) {
+  # Get the variable importance table
+  var_imp <- tm_rf %>%
+    importance() %>%
+    as.data.frame() %>%
+    mutate(var_name = row.names(.)) %>%
+    arrange(desc(IncNodePurity))
+  # for the first four most important variable
+  # create a pdp
+  if (is.null(x_names)) {
+    x_names <- list()
+    x_names[1] <- var_imp$var_name[1]
+    x_names[2] <- var_imp$var_name[2]
+    x_names[3] <- var_imp$var_name[3]
+    x_names[4] <- var_imp$var_name[4]
+  }
+  p1 <- tm_pdp(tm_rf, data, var_imp$var_name[1], x_names[1])
+  p2 <- tm_pdp(tm_rf, data, var_imp$var_name[2], x_names[2])
+  p3 <- tm_pdp(tm_rf, data, var_imp$var_name[3], x_names[3])
+  p4 <- tm_pdp(tm_rf, data, var_imp$var_name[4], x_names[4])
   # combine those plots
   cowplot::plot_grid(p1, p2, p3, p4, ncol = 2)
 }

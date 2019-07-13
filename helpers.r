@@ -19,18 +19,23 @@ na_table <- function(x) {
 
 # Load And pre-process the dataset
 load_endline1 <- function() {
+  # Load the datasets
   endlines <- read.dta13("data/2013-0533_data_endlines1and2.dta",
                          convert.factors = FALSE,
                          generate.factors = TRUE)
 
+  # Data Preparation
   endline1 <- endlines %>%
+    # Split Endline1 & Endline2 dataset
     filter(sample1 == 1) %>%
+    # Exclude irrelevant variables
     select(colnames(endlines)[1:16],
-           contains("_1"),
-           -c(w, w1, w2, sample1, sample2, visitday_1, visitmonth_1, visityear_1),
-           -starts_with("area_"),
-           -ends_with("_mo_1"),
+           contains("_1"), # only select the variables that are relevant to endline1 survey
+           -c(w, w1, w2, sample1, sample2, visitday_1, visitmonth_1, visityear_1), # exclude survey-related variables
+           -starts_with("area_"),  # exclude area-level variables
+           -ends_with("_mo_1"),    # exclude monthly & annually expenses variables (only keep the per capital version)
            -ends_with("_annual_1")) %>%
+    # Transform/Merge variables
     mutate(old_biz = ifelse(any_old_biz == 0 | is.na(any_old_biz) == TRUE,
                             0,
                             old_biz),
@@ -40,19 +45,22 @@ load_endline1 <- function() {
            newbiz_1 = ifelse(any_new_biz_1 == 0 | is.na(any_new_biz_1) == TRUE,
                              0,
                              newbiz_1)) %>%
+    # Exclude redundent variables
     select(-c(any_old_biz, any_biz_1, any_new_biz_1,
               hhsize_1,
               anymfi_1, anymfi_amt_1,
               hours_week_1, hours_headspouse_week_1, hours_child1620_week_1,
               total_exp_mo_pc_1))
 
+  # Clean NA missing values
+  ## Delete the variables with NA ratio over 10%
   na_delete_threshold <- 0.1
   na_delete_col <- (na_table(endline1) %>% filter(ratio > na_delete_threshold))[,1]
-  # delete those variables
   for (col in na_delete_col) {
     endline1[,col] <- NULL
   }
 
+  # For Business-related variables, impute NA with default values 0
   endline1 <- endline1 %>%
     mutate(bizassets_1 = ifelse(total_biz_1 == 0 | is.na(total_biz_1),
                                 0,
@@ -73,6 +81,7 @@ load_endline1 <- function() {
                                    0,
                                    bizemployees_1))
 
+  # For the other variables, impute NA with the median value
   covariates_name <- endline1 %>%
     select(-contains("index")) %>%
     colnames()
@@ -81,22 +90,26 @@ load_endline1 <- function() {
       median(endline1[, covar], na.rm = TRUE)
   }
 
+  # Make sure there are no NA in the dataset
   endline1 <- na.omit(endline1)
 
-  #exp_col <- endline1 %>%
-  #  select(contains("exp_mo_pc")) %>%
-  #  colnames()
-  #for (covar in exp_col) {
-  #  covar_outlier <- scores(x = endline1[, covar], type = "iqr", lim = 5)
-  #  endline1 <- endline1[!covar_outlier, ]
-  #}
+  # Exclude with the outliers in Expenses-related variables
+  exp_col <- endline1 %>%
+    select(contains("exp_mo_pc")) %>%
+    colnames()
+  for (covar in exp_col) {
+    covar_outlier <- scores(x = endline1[, covar], type = "iqr", lim = 5)
+    endline1 <- endline1[!covar_outlier, ]
+  }
 
+  # For the Loan-related outliers, only exclude certian observations with extreme value
   endline1 <- endline1[-which.max(endline1$anyloan_amt_1), ]
   endline1 <- endline1[-which.max(endline1$anyloan_amt_1), ]
   endline1 <- endline1[-which.max(endline1$anyloan_amt_1), ]
   endline1 <- endline1[-which.max(endline1$informal_amt_1),]
   endline1 <- endline1[-which.max(endline1$informal_amt_1),]
 
+  # Convert the unit of Expenses-related & Loan-related variables from Rupee to USD
   endline1$anyloan_amt_1 <- endline1$anyloan_amt_1 / 9.1768
   endline1$spandana_amt_1 <- endline1$spandana_amt_1 / 9.1768
   endline1$othermfi_amt_1 <- endline1$othermfi_amt_1 / 9.1768
@@ -108,6 +121,7 @@ load_endline1 <- function() {
   endline1$health_exp_mo_pc_1 <- endline1$health_exp_mo_pc_1 / 9.1768
   endline1$temptation_exp_mo_pc_1 <- endline1$temptation_exp_mo_pc_1 / 9.1768
   endline1$festival_exp_mo_pc_1 <- endline1$festival_exp_mo_pc_1 / 9.1768
+  # Return the post-cleaning dataset
   return(endline1)
 }
 

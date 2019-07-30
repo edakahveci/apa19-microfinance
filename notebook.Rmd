@@ -1,7 +1,6 @@
 ---
 output:
-  pdf_document: default
-  html_document: default
+  md_document  
 ---
 # Setup The Environment
 
@@ -176,7 +175,6 @@ tm_rf_biz_names <- c("Health Expenditure (mo/pc)",
 tm_rf_biz_pred <- predict(tm_rf_biz, newdata=main)
 main[, "preds"] <- tm_rf_biz_pred
 ```
-
 
 ### Trend Plots
 

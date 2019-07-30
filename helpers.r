@@ -1,7 +1,13 @@
 library(readstata13)
 library(tidyverse)
 library(outliers)
+library(caret)
+library(randomForest)
+library(lfe)
+library(grf)
 library(pdp)
+library(ggplot2)
+library(cowplot)
 
 # Analyze The Missing Values
 na_table <- function(x) {
@@ -330,13 +336,12 @@ var_imp_plot <- function(forest, decay.exponent = 2L, max.depth = 4L) {
     tail(20)
 
   # Plot results
-  p <- ggplot(df, aes(Variable, Importance)) +
+  ggplot(df, aes(Variable, Importance)) +
     geom_bar(stat = 'identity') +
     coord_flip() +
     ggtitle('Variable Importance') +
     theme_bw() +
-    theme(plot.title = element_text(hjust = 0.5)) +
-  print(p)
+    theme(plot.title = element_text(hjust = 0.5))
 }
 
 tm_trend_plots <- function(tm_rf, test, x_names) {

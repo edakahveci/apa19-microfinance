@@ -1,0 +1,271 @@
+---
+title: "blogpost"
+author: "Edanur & Thomas"
+date: "7/30/2019"
+output: 
+  md_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library_helper_functions, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+set.seed(111222333)
+source("helpers.r")
+```
+
+# Data Exploration
+
+```{r load_and_structure}
+endline1 <- load_endline1()
+str(endline1)
+```
+
+# Business Index
+
+## Prepare The Dataset
+
+```{r biz_dataset}
+target_index <- "biz_index_all_1"
+
+endline1_biz <- endline1 %>%
+  filter(total_biz_1 != 0) %>%
+  select(everything(),
+         -hhid,
+         -contains("biz"),
+         -anyloan_1,
+         -anyloan_amt_1,
+         -contains("index"), # prevent confounding
+         target_index)       # add target index
+
+```
+
+```{r biz_dataset_without_exp}
+target_index <- "biz_index_all_1"
+
+endline1_biz_noexp <- endline1 %>%
+  filter(total_biz_1 != 0) %>%
+  select(everything(),
+         -hhid,
+         -contains("biz"),
+         -anyloan_1,
+         -anyloan_amt_1,
+         -contains("exp"),   # prevent confounding
+         -contains("index"), # prevent confounding
+         target_index)       # add target index
+```
+
+## GATES
+
+```{r biz_two_models_all, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+num.iters <- 10
+tm_gates_biz <- tm_gates("biz_index_all_1", "treatment", endline1_biz,
+                         split_ratio = 0.5,
+                         cluster="areaid", num.iter=num.iters, ml_method="rf")
+```
+
+```{r biz_gates, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+alpha <- 0.05
+groups <- 5
+gates_plot_data <- data.frame(matrix(NA, ncol = 4, nrow = groups))
+gates_plot_data[, 1] <- c("1", "2", "3", "4", "5")
+for (i in 1:5) {
+  gates_plot_data[i, 2] <- median(tm_gates_biz[[1]][, i])
+  gates_plot_data[i, 3] <- median(tm_gates_biz[[1]][, i+5])
+  gates_plot_data[i, 4] <- median(tm_gates_biz[[1]][, i+10])
+}
+colnames(gates_plot_data) <- c("G", "F", "U", "L")
+
+bp_plot_data <- data.frame(matrix(NA, ncol = 4, nrow = 10))
+bp_plot_data[,1] <- c(-Inf, Inf)
+for (i in 1:3) {
+  bp_plot_data[,i+1] <- median(tm_gates_biz[[2]][, i])
+}
+colnames(bp_plot_data) <- c("x", "ATE", "L", "U")
+
+ggplot() + 
+  theme_gray(base_size = 14) +
+  geom_point(data=gates_plot_data,
+             aes(y = F, x = G, colour='GATES'),
+             size = 3) +
+  geom_errorbar(data=gates_plot_data,
+                aes(ymax = U, ymin = L ,
+                    x = G, width=0.7, colour="90% CB(GATES)"),
+                show.legend = TRUE) +
+  geom_line(aes(x = x, y = ATE, 
+                linetype = cutoff, 
+                colour='ATE'), 
+            bp_plot_data, 
+            linetype = 2) +
+  geom_line(aes(x = x, y = U, 
+                linetype = cutoff, 
+                colour='90% CB(ATE)'), 
+            bp_plot_data, 
+            linetype = 2) +
+  geom_line(aes(x = x, y = L, 
+                linetype = cutoff), 
+            bp_plot_data, 
+            linetype = 2,
+            color = "red") +
+  scale_colour_manual(values = c("red", "black", "blue", "black"),
+                      breaks=c('ATE','90% CB(ATE)',"GATES",'90% CB(GATES)'),
+                      guide = guide_legend(override.aes = list(
+                        linetype = c("dashed", "dashed"  ,"blank", "solid"),
+                        shape = c(NA,NA, 16, NA)), 
+                        ncol =2,
+                        byrow=TRUE)) +
+  theme(plot.title = element_text(hjust = 0.5,size = 11, face = "bold"),
+        axis.title=element_text(size=10), 
+        legend.text=element_text(size=7), 
+        legend.key = element_rect(colour = NA, fill = NA), 
+        legend.key.size = unit(1, 'lines'),
+        legend.title=element_blank(),
+        legend.justification=c(0,1), 
+        legend.position=c(0,1), 
+        legend.background=element_rect(fill=alpha('blue', 0)))  +
+  ylim(range(-0.3, 0.5)) +
+  labs(title="GATES with Random Forest on Business Index", 
+       y = "Treatment Effect", x = "Group")
+```
+
+## Causal Random Forest
+
+## Two-model Approach
+
+```{r biz_tm_varimp, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+set.seed(111)
+main <- tm_gates_biz[[3]]
+tm_rf_biz <- randomForest(cte ~ . -treatment-areaid-baseline-G1-G2-G3-G4-G5-biz_index_all_1-prop_score-treat_group-prop_offset-weight-cte_ort-treatment_ort,
+                          data = main,
+                          ntree = 3000,
+                          mtry = 3,
+                          replace = TRUE,
+                          type="regression")
+
+varImpPlot(tm_rf_biz, n.var = 20, main="TMA Variable Importance")
+```
+
+## Partial Dependence Plots
+
+## Advanced Partial Dependence Plots
+
+## Comparison
+
+# Women Empowerment Index
+
+## Prepare The Dataset
+
+```{r woemp_dataset}
+target_index <- "women_emp_index_1"
+
+endline1_woemp <- endline1 %>%
+  select(everything(),
+         -hhid,
+         -contains("index"), # prevent confounding
+         -anyloan_1,
+         -anyloan_amt_1,
+         target_index)       # add target index
+```
+
+```{r woemp_dataset_without_exp}
+endline1_woemp_noexp <- endline1 %>%
+  select(everything(),
+         -hhid,
+         -contains("exp"),
+         -contains("index"), # prevent confounding
+         -anyloan_1,
+         -anyloan_amt_1,
+         target_index)       # add target index
+```
+
+## GATES
+
+```{r woemp_tm_gates}
+alpha <- 0.05
+groups <- 5
+gates_plot_woemp <- data.frame(matrix(NA, ncol = 4, nrow = groups))
+gates_plot_woemp[, 1] <- c("1", "2", "3", "4", "5")
+for (i in 1:5) {
+  gates_plot_woemp[i, 2] <- median(tm_gates_woemp_noexp[[1]][, i])
+  gates_plot_woemp[i, 3] <- median(tm_gates_woemp_noexp[[1]][, i+5])
+  gates_plot_woemp[i, 4] <- median(tm_gates_woemp_noexp[[1]][, i+10])
+}
+colnames(gates_plot_woemp) <- c("G", "F", "U", "L")
+
+bp_plot_woemp <- data.frame(matrix(NA, ncol = 4, nrow = 10))
+bp_plot_woemp[,1] <- c(-Inf, Inf)
+for (i in 1:3) {
+  bp_plot_woemp[,i+1] <- median(tm_gates_woemp_noexp[[2]][, i])
+}
+colnames(bp_plot_woemp) <- c("x", "ATE", "L", "U")
+
+ggplot() + 
+  theme_gray(base_size = 14) +
+  geom_point(data=gates_plot_woemp,
+             aes(y = F, x = G, colour='GATES'),
+             size = 3) +
+  geom_errorbar(data=gates_plot_woemp,
+                aes(ymax = U, ymin = L ,
+                    x = G, width=0.7, colour="90% CB(GATES)"),
+                show.legend = TRUE) +
+  geom_line(aes(x = x, y = ATE, 
+                linetype = cutoff, 
+                colour='ATE'), 
+            bp_plot_woemp, 
+            linetype = 2) +
+  geom_line(aes(x = x, y = U, 
+                linetype = cutoff, 
+                colour='90% CB(ATE)'), 
+            bp_plot_woemp, 
+            linetype = 2) +
+  geom_line(aes(x = x, y = L, 
+                linetype = cutoff), 
+            bp_plot_woemp, 
+            linetype = 2,
+            color = "red") +
+  scale_colour_manual(values = c("red", "black", "blue", "black"),
+                      breaks=c('ATE','90% CB(ATE)',"GATES",'90% CB(GATES)'),
+                      guide = guide_legend(override.aes = list(
+                        linetype = c("dashed", "dashed"  ,"blank", "solid"),
+                        shape = c(NA,NA, 16, NA)), 
+                        ncol =2,
+                        byrow=TRUE)) +
+  theme(plot.title = element_text(hjust = 0.5,size = 11, face = "bold"),
+        axis.title=element_text(size=10), 
+        legend.text=element_text(size=7), 
+        legend.key = element_rect(colour = NA, fill = NA), 
+        legend.key.size = unit(1, 'lines'),
+        legend.title=element_blank(),
+        legend.justification=c(0,1), 
+        legend.position=c(0,1), 
+        legend.background=element_rect(fill=alpha('blue', 0)))  +
+  ylim(range(-0.3, 0.5)) +
+  labs(title="GATES with Random Forest on Women Empowerment Index", 
+       y = "Treatment Effect", x = "Group by Het Score")
+```
+
+## Causal Random Forest
+
+## Two-model Approach
+
+```{r woemp_tm_varimp}
+set.seed(111)
+main <- tm_gates_biz_noexp[[3]]
+tm_rf_biz_noexp <- randomForest(cte ~ . -treatment-areaid-baseline-G1-G2-G3-G4-G5-biz_index_all_1-prop_score-treat_group-prop_offset-weight-cte_ort-treatment_ort,
+                          data = main,
+                          ntree = 3000,
+                          mtry = 3,
+                          replace = TRUE,
+                          type="regression")
+
+varImpPlot(tm_rf_biz_noexp, n.var = 20, main="TMA Variable Importance")
+```
+
+## Partial Dependece Plots
+
+## Advanced Partial Dependece Plots
+
+## Comparison
+
+# Consumption Index

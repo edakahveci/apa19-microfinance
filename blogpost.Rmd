@@ -3,11 +3,17 @@ title: "blogpost"
 author: "Edanur & Thomas"
 date: "7/30/2019"
 output: 
-  md_document
+  md_document:
+    toc: true
+    variant: gfm
+bibliography: applied-predictive-analytics.bib
+link-citations: yes
+csl: apa.csl
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache = TRUE)
 ```
 
 ```{r library_helper_functions, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
@@ -15,16 +21,67 @@ set.seed(111222333)
 source("helpers.r")
 ```
 
-# Data Exploration
+## Introduction
+
+The paper [@banerjee2015MiracleMicrofinanceEvidence] presents the results from the randomized evaluation of a group-lending microcredit program in Hyderabad, India. Microcredit has been lent to groups of 6 to 10 women by a microfinance institution, Spandana. According to the baseline survey conducted in 2005, 104 neighborhoods with no pre-existing microfinance was selected. They were paired up and one of each pair was randomly assigned to the treatment group. Spandana then progressively began operating in the 52 treatment areas between 2006 and 2007. As an important point to highlight, the treatment was not a credit take-up but an easy access to microcredit.
+
+### Why Index Variables
+
+Instead of analyzing specific household behaviors such as business investment or consumption on nondurable goods, as the original paper did, we want to focus on the more general aspect of the well-being. This could be done by utilizing the “Index” variables provided by the dataset.
+
+These index variables are the weighted average of related variables. For example, business index is the weighted average of business asset, business expenses, business profit etc. By doing so, the index variable become a holistic representation of an aspect of well-being and can capture general condition of that aspect. In the example above, business index could represent the overall circumstances of the business activities of the households.
+
+## Data Exploration
+
+The paper [@banerjee2015MiracleMicrofinanceEvidence] comes with 5 datasets, including data gathered in the first endline survey and second endline survey as well as data gathered in the baseline survey.
+
+This project uses mainly the endline dataset, specifically the first endline data. The baseline dataset would be useful to calculate the changes across time. However, in our case, the index of households is different between baseline dataset and endline dataset. Hence we can not make one-to-one mapping between households in the two datasets. And since we are mainly interested in how easy accessibility to Spandana microcredits affect households well-being, only the data collected in the first endline survey will be used in this project.
 
 ```{r load_and_structure}
 endline1 <- load_endline1()
 str(endline1)
 ```
 
-# Business Index
+## Methods
 
-## Prepare The Dataset
+In this section we will present the structure of our analysis as well as the methods we used this project.
+
+Traditional Response Models vs. Uplift Modeling (I read about this at the reference with *, I also write it at the motivation part as one of the reasons why we picked an uplift model)
+
+We picked 3 models:
+
+- Causal forest
+- Causal KNN (??)
+- Two Model Approach
+
+### Structure of Analysis
+
+This section describes the general structure of the analysis and the methods used for each task. The details of each method will be discussed in the next section.
+
+1. Detect whether the treatment effect on the selected index variable exhibits heterogeneity  
+This is vital as our "welfare-enhancing policies" is based on the assumption of targeting only the households with   relatively large treatment effect. Hence if the treatment effect is homogeneous, which means all households exhibit similar treatment effect, then the targeting policies would be inefficient.  To perform this task, Two-model Approach with Sorted Groups Average Treatment Effect (GATES), which was proposed by Chernozhukov [@chernozhukov2018GenericMachineLearning], will be used.
+
+2. Find the variables that separate households with higher treatment effect  
+If the treatment effect is heterogeneous, next thing to do is to try to separate those high treatment effect households. For this task we will use to methods, Causal Random Forest and Two-model Approach with Random Forest.  
+    i) Causal Forest  
+    The causal forest’s splitting rule builds trees and mimics the process that would be used if the treatment eﬀects were
+    observed [@hitsch2018HeterogeneousTreatmentEffects].  
+    ii) Two-Model Approach  
+    There is no conventional way to get variable importance using Two-Model Approach. However, given the
+    predictedconditional treatment effect we could further fit a Random Forest model to get the variable importance.
+
+3. Find the thresholds for given variables that could make the policies more performing  
+Narrowing the target could make the policy more efficient and better performing. Hence after knowing which variables make the highest impact on households’ treatment effect, our next step is then to investigate at which values of those variables a household could benefit the most from the treatment.  To accomplish this, we will use partial dependence plots to analyze those critical values.
+
+### Two-Model Approach And Sorted Group Average Treatment Effect
+
+Two-model approach was proposed by Chernozhukov et al. as a method for estimating average treatment effects [@chernozhukov2016DoubleDebiasedMachine],[@chernozhukov2017DoubleDebiasedNeyman]. The concept is fairly straightforward. Since machine learning has been shown to be highly effective in prediction, two-model approach exploits this feature by fitting one machine learning method on the control group and the other on the treatment group. This way we obtain one model that could be used to predict the “baseline” effect, which is defined as the outcomes if the subjects were not treated, and the other model that could be used to predict the outcomes if they were treated. We could use the two models to predict baseline effect and treatment effect for each subject. Then the conditional treatment is simply the difference between them.
+
+Sorted group average treatment effect was proposed by Chernozhukov et al. as one of the strategies to estimate and make inferences on key features of heterogeneous treatment effects. [@chernozhukov2018GenericMachineLearning].
+
+## Business Index
+
+### Prepare The Dataset
 
 ```{r biz_dataset}
 target_index <- "biz_index_all_1"
@@ -56,7 +113,7 @@ endline1_biz_noexp <- endline1 %>%
          target_index)       # add target index
 ```
 
-## GATES
+### GATES
 
 ```{r biz_two_models_all, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
 num.iters <- 10
@@ -129,9 +186,9 @@ ggplot() +
        y = "Treatment Effect", x = "Group")
 ```
 
-## Causal Random Forest
+### Causal Random Forest
 
-## Two-model Approach
+### Two-model Approach
 
 ```{r biz_tm_varimp, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
 set.seed(111)
@@ -146,15 +203,15 @@ tm_rf_biz <- randomForest(cte ~ . -treatment-areaid-baseline-G1-G2-G3-G4-G5-biz_
 varImpPlot(tm_rf_biz, n.var = 20, main="TMA Variable Importance")
 ```
 
-## Partial Dependence Plots
+### Partial Dependence Plots
 
-## Advanced Partial Dependence Plots
+### Advanced Partial Dependence Plots
 
-## Comparison
+### Comparison
 
-# Women Empowerment Index
+## Women Empowerment Index
 
-## Prepare The Dataset
+### Prepare The Dataset
 
 ```{r woemp_dataset}
 target_index <- "women_emp_index_1"
@@ -179,93 +236,31 @@ endline1_woemp_noexp <- endline1 %>%
          target_index)       # add target index
 ```
 
-## GATES
-
-```{r woemp_tm_gates}
-alpha <- 0.05
-groups <- 5
-gates_plot_woemp <- data.frame(matrix(NA, ncol = 4, nrow = groups))
-gates_plot_woemp[, 1] <- c("1", "2", "3", "4", "5")
-for (i in 1:5) {
-  gates_plot_woemp[i, 2] <- median(tm_gates_woemp_noexp[[1]][, i])
-  gates_plot_woemp[i, 3] <- median(tm_gates_woemp_noexp[[1]][, i+5])
-  gates_plot_woemp[i, 4] <- median(tm_gates_woemp_noexp[[1]][, i+10])
-}
-colnames(gates_plot_woemp) <- c("G", "F", "U", "L")
-
-bp_plot_woemp <- data.frame(matrix(NA, ncol = 4, nrow = 10))
-bp_plot_woemp[,1] <- c(-Inf, Inf)
-for (i in 1:3) {
-  bp_plot_woemp[,i+1] <- median(tm_gates_woemp_noexp[[2]][, i])
-}
-colnames(bp_plot_woemp) <- c("x", "ATE", "L", "U")
-
-ggplot() + 
-  theme_gray(base_size = 14) +
-  geom_point(data=gates_plot_woemp,
-             aes(y = F, x = G, colour='GATES'),
-             size = 3) +
-  geom_errorbar(data=gates_plot_woemp,
-                aes(ymax = U, ymin = L ,
-                    x = G, width=0.7, colour="90% CB(GATES)"),
-                show.legend = TRUE) +
-  geom_line(aes(x = x, y = ATE, 
-                linetype = cutoff, 
-                colour='ATE'), 
-            bp_plot_woemp, 
-            linetype = 2) +
-  geom_line(aes(x = x, y = U, 
-                linetype = cutoff, 
-                colour='90% CB(ATE)'), 
-            bp_plot_woemp, 
-            linetype = 2) +
-  geom_line(aes(x = x, y = L, 
-                linetype = cutoff), 
-            bp_plot_woemp, 
-            linetype = 2,
-            color = "red") +
-  scale_colour_manual(values = c("red", "black", "blue", "black"),
-                      breaks=c('ATE','90% CB(ATE)',"GATES",'90% CB(GATES)'),
-                      guide = guide_legend(override.aes = list(
-                        linetype = c("dashed", "dashed"  ,"blank", "solid"),
-                        shape = c(NA,NA, 16, NA)), 
-                        ncol =2,
-                        byrow=TRUE)) +
-  theme(plot.title = element_text(hjust = 0.5,size = 11, face = "bold"),
-        axis.title=element_text(size=10), 
-        legend.text=element_text(size=7), 
-        legend.key = element_rect(colour = NA, fill = NA), 
-        legend.key.size = unit(1, 'lines'),
-        legend.title=element_blank(),
-        legend.justification=c(0,1), 
-        legend.position=c(0,1), 
-        legend.background=element_rect(fill=alpha('blue', 0)))  +
-  ylim(range(-0.3, 0.5)) +
-  labs(title="GATES with Random Forest on Women Empowerment Index", 
-       y = "Treatment Effect", x = "Group by Het Score")
+```{r}
+str(endline1_woemp_noexp)
 ```
 
-## Causal Random Forest
+### GATES
 
-## Two-model Approach
+### Causal Random Forest
 
-```{r woemp_tm_varimp}
-set.seed(111)
-main <- tm_gates_biz_noexp[[3]]
-tm_rf_biz_noexp <- randomForest(cte ~ . -treatment-areaid-baseline-G1-G2-G3-G4-G5-biz_index_all_1-prop_score-treat_group-prop_offset-weight-cte_ort-treatment_ort,
-                          data = main,
-                          ntree = 3000,
-                          mtry = 3,
-                          replace = TRUE,
-                          type="regression")
+### Two-model Approach
 
-varImpPlot(tm_rf_biz_noexp, n.var = 20, main="TMA Variable Importance")
-```
+### Partial Dependece Plots
 
-## Partial Dependece Plots
+### Advanced Partial Dependece Plots
 
-## Advanced Partial Dependece Plots
+### Comparison
 
-## Comparison
+## Consumption Index 
 
-# Consumption Index
+asehtnahseoinho [@chernozhukov2018GenericMachineLearning].
+
+## Models Comparison
+
+Measuring and comparing the performance of our two methods is not straightforward as calculating MSE (mean square error) or determining the accuracy. Since in real life causal inference problems, we do not have the true treatment effect. Then the above mentioned metrics can not apply under this circumstance as they need to compare the predicted value with the true value. 
+Usually for uplift models, the metric used to compare the performances of different methods is Qini score (add references). (maybe add some advantages of Qini score and why people usually use it).
+However, considering the target variables we selected in this project are continuous instead of categorical, Qini score is not suitable in our case. There are ways to circumvent this issue. For example we could convert the numeric values into binaries based on some predefined thresholds that indicate whether or not a household “really” benefit from the treatment. (Add the reasons why we didn’t do this.)
+The other comparing method is to use the transformed outcomes as “true” value and calculate the distance of predicted value and the transformed outcome. This way the conventional error measurement, such as mean absolute error (MAE) and mean square error (MSE), could be implemented to assess the model performance. For this project we decided to use transformed outcome approach with mean square error as the error metric when comparing the performances of the two methods.
+
+## References

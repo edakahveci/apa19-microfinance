@@ -55,6 +55,7 @@ load_endline1 <- function() {
     select(-c(any_old_biz, any_biz_1, any_new_biz_1,
               hhsize_1,
               anymfi_1, anymfi_amt_1,
+              anyloan_1, anyloan_amt_1,
               hours_week_1, hours_headspouse_week_1, hours_child1620_week_1,
               total_exp_mo_pc_1))
 
@@ -103,20 +104,13 @@ load_endline1 <- function() {
   exp_col <- endline1 %>%
     select(contains("exp_mo_pc")) %>%
     colnames()
+  exp_col <- c(exp_col, "informal_amt_1")
   for (covar in exp_col) {
     covar_outlier <- scores(x = endline1[, covar], type = "iqr", lim = 5)
     endline1 <- endline1[!covar_outlier, ]
   }
 
-  # For the Loan-related outliers, only exclude certian observations with extreme value
-  endline1 <- endline1[-which.max(endline1$anyloan_amt_1), ]
-  endline1 <- endline1[-which.max(endline1$anyloan_amt_1), ]
-  endline1 <- endline1[-which.max(endline1$anyloan_amt_1), ]
-  endline1 <- endline1[-which.max(endline1$informal_amt_1),]
-  endline1 <- endline1[-which.max(endline1$informal_amt_1),]
-
   # Convert the unit of Expenses-related & Loan-related variables from Rupee to USD
-  endline1$anyloan_amt_1 <- endline1$anyloan_amt_1 / 9.1768
   endline1$spandana_amt_1 <- endline1$spandana_amt_1 / 9.1768
   endline1$othermfi_amt_1 <- endline1$othermfi_amt_1 / 9.1768
   endline1$bank_amt_1 <- endline1$bank_amt_1 / 9.1768
@@ -339,7 +333,26 @@ var_imp_plot <- function(forest, decay.exponent = 2L, max.depth = 4L) {
   ggplot(df, aes(Variable, Importance)) +
     geom_bar(stat = 'identity') +
     coord_flip() +
-    ggtitle('Variable Importance') +
+    labs(x = "Variable Name", title = "Causal Random Forest") +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5))
+}
+
+var_imp_plot_rf <- function(forest) {
+  # Format data frame
+  var.names <- rownames(forest$importance)
+  var.imp <- as.numeric(forest$importance)
+  df <- tibble(Variable = var.names,
+               Importance = var.imp) %>%
+    arrange(Importance) %>%
+    mutate(Variable = factor(Variable, levels = unique(Variable))) %>%
+    tail(20)
+
+  # Plot results
+  ggplot(df, aes(Variable, Importance)) +
+    geom_bar(stat = 'identity') +
+    coord_flip() +
+    labs(x = "Variable Name", title = "Two-model Approach") +
     theme_bw() +
     theme(plot.title = element_text(hjust = 0.5))
 }
@@ -426,19 +439,19 @@ trend_plots <- function(crf, test) {
   cowplot::plot_grid(p1, p2, p3, p4, ncol = 2)
 }
 
-tm_pdp <- function(model, data, target_var, x_lab) {
-  pdp_rf_biz <- partial(model, pred.var = target_var,
-                        chull = TRUE, progress = "text", train = data)
-
+pdp_plot <- function(model, data, target_var, x_lab, model_name) {
+  if (model_name == "Causal Random Forest") {
+    data <- model.matrix(~., data = data)
+  }
+  pdp_model <- partial(model, pred.var = target_var,
+                       chull = TRUE, progress = "text", train = data)
+  title <- paste("PDP (", model_name, ")")
   pdp <- ggplot() +
     theme_gray(base_size = 14) +
-    geom_line(data = pdp_rf_biz, aes_string(x=target_var, y="yhat")) +
-    theme(plot.title = element_text(hjust = 0.5,size = 14, face = "bold"),
-          axis.title=element_text(size=10),
-          axis.text=element_text(size=8)) +
+    geom_line(data = pdp_model, aes_string(x=target_var, y="yhat")) +
     scale_x_continuous(labels = scales::comma) +
-    labs(#title="PDP Of Two-models Approach",
-      x=x_lab, y="pred. CTE")
+    theme_light() +
+    labs(title=title, x=x_lab, y="Conditional Treatment Effect")
   return(pdp)
 }
 
@@ -464,4 +477,13 @@ tm_pdp_plots <- function(tm_rf, data, x_names=NULL) {
   p4 <- tm_pdp(tm_rf, data, var_imp$var_name[4], x_names[4])
   # combine those plots
   cowplot::plot_grid(p1, p2, p3, p4, ncol = 2)
+}
+
+trend_plot <- function(data, target, var_name, method) {
+  plot <- ggplot(data, aes_string(x = target, y = "preds")) +
+    geom_point() +
+    geom_smooth(method = "loess", span = 1) +
+    theme_light() +
+    scale_x_continuous(labels = scales::comma) +
+    labs(x = var_name, y = "Conditional Treatment Effect", title = method)
 }

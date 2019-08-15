@@ -17,7 +17,8 @@ knitr::opts_chunk$set(cache = TRUE)
 ```
 
 ```{r library_helper_functions, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
-set.seed(111222333)
+seed <- 111222333
+set.seed(seed)
 source("helpers.r")
 ```
 
@@ -206,7 +207,7 @@ biz_crf <- causal_forest(
   mtry = 3, 
   num.trees = 3000,
   honesty = TRUE,
-  seed = 111222333)
+  seed = seed)
 ```
 
 ```{r biz_varimp, echo=FALSE, fig.height=5, fig.width=8, message=FALSE, warning=FALSE, paged.print=FALSE}
@@ -341,7 +342,7 @@ biz_noexp_crf <- causal_forest(
   mtry = 3, 
   num.trees = 3000,
   honesty = TRUE,
-  seed = 111222333)
+  seed = seed)
 ```
 
 ```{r biz_noexp_varimp, echo=FALSE, fig.height=5, fig.width=8, message=FALSE, warning=FALSE, paged.print=FALSE}
@@ -350,7 +351,7 @@ biz_noexp_tm_var_imp <- var_imp_plot_rf(biz_noexp_tm_rf)
 cowplot::plot_grid(biz_noexp_crf_var_imp, biz_noexp_tm_var_imp)
 ```
 
-### Trend Plots
+### Most Efficient Value
 
 ```{r biz_noexp_crf_pred, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
 biz_noexp_crf_pred <- predict(object = biz_noexp_crf,
@@ -371,26 +372,6 @@ biz_noexp_tm_trend_informal_amt <- trend_plot(main, "informal_amt_1", "Amount of
 cowplot::plot_grid(biz_noexp_crf_trend_informal_amt, biz_noexp_tm_trend_informal_amt, ncol = 2)
 ```
 
-#### Adjusted Household Size
-
-```{r biz_noexp_trend_hhsize_adj, echo=FALSE, fig.height=3, fig.width=8}
-biz_noexp_crf_trend_hhsize_adj <- trend_plot(test, "hhsize_adj_1", "Adjusted Household Size", "Causaul Random Forest")
-biz_noexp_tm_trend_hhsize_adj <- trend_plot(main, "hhsize_adj_1", "Adjusted Household Size", "Two-model Approach")
-cowplot::plot_grid(biz_noexp_crf_trend_hhsize_adj, biz_noexp_tm_trend_hhsize_adj, ncol = 2)
-```
-
-#### Head Age
-
-```{r biz_noexp_trend_head_age, fig.height=3, fig.width=8}
-biz_noexp_crf_trend_head_age <- trend_plot(test, "head_age_1", "Head Age", "Causaul Random Forest")
-biz_noexp_tm_trend_head_age <- trend_plot(main, "head_age_1", "Head Age", "Two-model Approach")
-cowplot::plot_grid(biz_noexp_crf_trend_head_age, biz_noexp_tm_trend_head_age, ncol = 2)
-```
-
-### Partial Dependence Plots
-
-#### Informal Loan Amount
-
 ```{r biz_noexp_pdp_informal_amt, fig.height=3, fig.width=8, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
 biz_noexp_tm_pdp_informal_amt <- pdp_plot(biz_noexp_tm_rf, main, 
                                           "informal_amt_1", "Amount of Informal Loan", "Two-model Approach")
@@ -401,6 +382,12 @@ cowplot::plot_grid(biz_noexp_crf_pdp_informal_amt, biz_noexp_tm_pdp_informal_amt
 
 #### Adjusted Household Size
 
+```{r biz_noexp_trend_hhsize_adj, echo=FALSE, fig.height=3, fig.width=8}
+biz_noexp_crf_trend_hhsize_adj <- trend_plot(test, "hhsize_adj_1", "Adjusted Household Size", "Causaul Random Forest")
+biz_noexp_tm_trend_hhsize_adj <- trend_plot(main, "hhsize_adj_1", "Adjusted Household Size", "Two-model Approach")
+cowplot::plot_grid(biz_noexp_crf_trend_hhsize_adj, biz_noexp_tm_trend_hhsize_adj, ncol = 2)
+```
+
 ```{r biz_noexp_pdp_hhsize_adj, fig.height=3, fig.width=8, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
 biz_noexp_tm_pdp_hhsize_adj <- pdp_plot(biz_noexp_tm_rf, main, 
                                         "hhsize_adj_1", "Adjusted Household Size", "Two-model Approach")
@@ -410,6 +397,12 @@ cowplot::plot_grid(biz_noexp_crf_pdp_hhsize_adj, biz_noexp_tm_pdp_hhsize_adj, nc
 ```
 
 #### Head Age
+
+```{r biz_noexp_trend_head_age, fig.height=3, fig.width=8}
+biz_noexp_crf_trend_head_age <- trend_plot(test, "head_age_1", "Head Age", "Causaul Random Forest")
+biz_noexp_tm_trend_head_age <- trend_plot(main, "head_age_1", "Head Age", "Two-model Approach")
+cowplot::plot_grid(biz_noexp_crf_trend_head_age, biz_noexp_tm_trend_head_age, ncol = 2)
+```
 
 ```{r biz_noexp_pdp_head_age, fig.height=3, fig.width=8, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
 biz_noexp_tm_pdp_head_age <- pdp_plot(biz_noexp_tm_rf, main, 
@@ -541,7 +534,7 @@ woemp_crf <- causal_forest(
   mtry = 3, 
   num.trees = 3000,
   honesty = TRUE,
-  seed = 111222333)
+  seed = seed)
 ```
 
 ```{r woemp_varimp, echo=FALSE, fig.height=5, fig.width=8, message=FALSE, warning=FALSE, paged.print=FALSE}
@@ -550,7 +543,7 @@ woemp_tm_var_imp <- var_imp_plot_rf(woemp_tm_rf)
 cowplot::plot_grid(woemp_crf_var_imp, woemp_tm_var_imp)
 ```
 
-### Trend Plots
+###  Most Efficient Value
 
 ```{r woemp_crf_pred, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
 woemp_crf_pred <- predict(object = woemp_crf,
@@ -563,14 +556,26 @@ woemp_tm_rf_pred <- predict(woemp_tm_rf, newdata=main)
 main[, "preds"] <- woemp_tm_rf_pred
 ```
 
-#### Food Expenditures
+#### Durable Goods Expenditures
 
-```{r woemp_trend_food_exp, echo=FALSE, fig.height=3, fig.width=8}
-woemp_crf_trend_food_exp <- trend_plot(test, 
-                                       "food_exp_mo_pc_1", "Food Expenses (month/capita)", "Causal Random Forest")
-woemp_tm_trend_food_exp <- trend_plot(main,
-                                      "food_exp_mo_pc_1", "Food Expenses (month/capita)", "Two-model Approach")
-cowplot::plot_grid(woemp_crf_trend_food_exp, woemp_tm_trend_food_exp, ncol = 2)
+```{r woemp_trend_durables_exp, echo=FALSE, fig.height=3, fig.width=8}
+woemp_crf_trend_durables_exp <- trend_plot(test, 
+                                           "durables_exp_mo_pc_1", "Durable Goods Expenses (month/person)",
+                                           "Causal Random Forest")
+woemp_tm_trend_durables_exp <- trend_plot(main,
+                                          "durables_exp_mo_pc_1", "Durable Goods Expenses (month/person)",
+                                          "Two-model Approach")
+cowplot::plot_grid(woemp_crf_trend_durables_exp, woemp_tm_trend_durables_exp, ncol = 2)
+```
+
+```{r woemp_pdp_durables_exp, fig.height=3, fig.width=8, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+woemp_tm_pdp_durables_exp <- pdp_plot(woemp_tm_rf, main, 
+                                      "durables_exp_mo_pc_1", "Durable Goods Expenses (month/person)", 
+                                      "Two-model Approach")
+woemp_crf_pdp_durables_exp <- pdp_plot(woemp_crf, X,
+                                       "durables_exp_mo_pc_1", "Durable Goods Expenses (month/person)", 
+                                       "Causal Random Forest")
+cowplot::plot_grid(woemp_crf_pdp_durables_exp, woemp_tm_pdp_durables_exp, ncol = 2)
 ```
 
 #### Adjusted Household Size
@@ -583,44 +588,6 @@ woemp_tm_trend_hhsize_adj <- trend_plot(main,
 cowplot::plot_grid(woemp_crf_trend_hhsize_adj, woemp_tm_trend_hhsize_adj, ncol = 2)
 ```
 
-#### Nondurable Goods Expenditures
-
-```{r woemp_trend_nondurable_exp, echo=FALSE, fig.height=3, fig.width=8}
-woemp_crf_trend_nondurable_exp <- trend_plot(test, 
-                                             "nondurable_exp_mo_pc_1", "Nondurable Goods Expenses (month/capita)",
-                                             "Causal Random Forest")
-woemp_tm_trend_nondurable_exp <- trend_plot(main,
-                                            "nondurable_exp_mo_pc_1", "Nondurable Goods Expenses (month/capita)",
-                                            "Two-model Approach")
-cowplot::plot_grid(woemp_crf_trend_nondurable_exp, woemp_tm_trend_nondurable_exp, ncol = 2)
-```
-
-#### Durable Goods Expenditures
-
-```{r woemp_trend_durables_exp, echo=FALSE, fig.height=3, fig.width=8}
-woemp_crf_trend_durables_exp <- trend_plot(test, 
-                                           "durables_exp_mo_pc_1", "Durable Goods Expenses (month/capita)",
-                                           "Causal Random Forest")
-woemp_tm_trend_durables_exp <- trend_plot(main,
-                                          "durables_exp_mo_pc_1", "Durable Goods Expenses (month/capita)",
-                                          "Two-model Approach")
-cowplot::plot_grid(woemp_crf_trend_durables_exp, woemp_tm_trend_durables_exp, ncol = 2)
-```
-
-### Partial Dependece Plots
-
-#### Food Expenditures
-
-```{r woemp_pdp_food_Exp, fig.height=3, fig.width=8, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
-woemp_tm_pdp_food_exp <- pdp_plot(woemp_tm_rf, main, 
-                                  "food_exp_mo_pc_1", "Food Expenses (month/capita)", "Two-model Approach")
-woemp_crf_pdp_food_exp <- pdp_plot(woemp_crf, X,
-                                   "food_exp_mo_pc_1", "Food Expenses (month/capita)", "Causal Random Forest")
-cowplot::plot_grid(woemp_crf_pdp_food_exp, woemp_tm_pdp_food_exp, ncol = 2)
-```
-
-#### Adjusted Household Size
-
 ```{r woemp_pdp_hhsize_adj, fig.height=3, fig.width=8, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
 woemp_tm_pdp_hhsize_adj <- pdp_plot(woemp_tm_rf, main, 
                                     "hhsize_adj_1", "Adjusted Household Size", "Two-model Approach")
@@ -629,7 +596,19 @@ woemp_crf_pdp_hhsize_adj <- pdp_plot(woemp_crf, X,
 cowplot::plot_grid(woemp_crf_pdp_hhsize_adj, woemp_tm_pdp_hhsize_adj, ncol = 2)
 ```
 
-## Consumption Index 
+#### Head Age
+
+```{r woemp_head_age, fig.height=3, fig.width=8, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+woemp_crf_trend_head_age <- trend_plot(test, "head_age_1", "Head Age", "Causal Random Forest")
+woemp_tm_trend_head_age <- trend_plot(main, "head_age_1", "Head Age", "Two-model Approach")
+cowplot::plot_grid(woemp_crf_trend_head_age, woemp_tm_trend_head_age, ncol = 2)
+```
+
+```{r woemp_pdp_hhsize_adj, fig.height=3, fig.width=8, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+woemp_tm_pdp_head_age <- pdp_plot(woemp_tm_rf, main, "head_age_1", "Head Agd", "Two-model Approach")
+woemp_crf_pdp_head_age <- pdp_plot(woemp_crf, X, "head_age_1", "Head Age", "Causal Random Forest")
+cowplot::plot_grid(woemp_crf_pdp_head_age, woemp_tm_pdp_head_age, ncol = 2)
+```
 
 ## Models Comparison
 

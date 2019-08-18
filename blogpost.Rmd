@@ -6,9 +6,6 @@ output:
   md_document:
     toc: true
     variant: gfm
-bibliography: applied-predictive-analytics.bib
-link-citations: yes
-csl: apa.csl
 ---
 
 ```{r setup, include=FALSE}
@@ -167,7 +164,7 @@ ggplot() +
         legend.position=c(0,1), 
         legend.background=element_rect(fill=alpha('blue', 0)))  +
   ylim(range(-0.3, 0.5)) +
-  labs(title="GATES with Random Forest on Business Index", 
+  labs(title="GATES (Business Index)", 
        y = "Treatment Effect", x = "Group")
 ```
 
@@ -412,12 +409,36 @@ biz_noexp_crf_pdp_head_age <- pdp_plot(biz_noexp_crf, X,
 cowplot::plot_grid(biz_noexp_crf_pdp_head_age, biz_noexp_tm_pdp_head_age, ncol = 2)
 ```
 
+### Transformed Outcome Loss
+
+```{r biz_noexp_tm_transformed_loss, message=FALSE, warning=FALSE, paged.print=FALSE}
+# transformed outcome : 
+main$biz_index_transformed <- (main$treatment - main$prop_score) / main$prop_score*(1 - main$prop_score) * main$biz_index_all_1
+
+# transformed outcome loss : 
+biz_noexp_tm_transformed_loss <- sum((main$cte - main$biz_index_transformed)^2) / nrow(main)
+biz_noexp_tm_transformed_loss
+```
+
+```{r biz_noexp_crf_transformed_lose, message=FALSE, warning=FALSE, paged.print=FALSE}
+test_Y <- test$biz_index_all_1
+test_X <- test %>% 
+  select(-treatment, -target_index, -areaid, -contains("exp"))
+test_clusters <- test$areaid
+test_W <- test$treatment
+biz_noexp_crf_trans_outcome <- (test_W - 0.5) / 0.5*(1-0.5) * test_Y
+biz_noexp_crf_MSE <- 1 / nrow(test) * sum((biz_noexp_crf_trans_outcome - biz_noexp_crf_pred)^2)
+biz_noexp_crf_MSE
+```
+
+
 ## Women Empowerment Index
 
 ### Prepare The Dataset
 
 ```{r woemp_dataset}
 target_index <- "women_emp_index_1"
+
 endline1_woemp <- endline1 %>%
   select(everything(),
          -hhid,
@@ -598,17 +619,40 @@ cowplot::plot_grid(woemp_crf_pdp_hhsize_adj, woemp_tm_pdp_hhsize_adj, ncol = 2)
 
 #### Head Age
 
-```{r woemp_head_age, fig.height=3, fig.width=8, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+```{r woemp_trend_head_age, fig.height=3, fig.width=8, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
 woemp_crf_trend_head_age <- trend_plot(test, "head_age_1", "Head Age", "Causal Random Forest")
 woemp_tm_trend_head_age <- trend_plot(main, "head_age_1", "Head Age", "Two-model Approach")
 cowplot::plot_grid(woemp_crf_trend_head_age, woemp_tm_trend_head_age, ncol = 2)
 ```
 
-```{r woemp_pdp_hhsize_adj, fig.height=3, fig.width=8, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+```{r woemp_pdp_head_age, fig.height=3, fig.width=8, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
 woemp_tm_pdp_head_age <- pdp_plot(woemp_tm_rf, main, "head_age_1", "Head Agd", "Two-model Approach")
 woemp_crf_pdp_head_age <- pdp_plot(woemp_crf, X, "head_age_1", "Head Age", "Causal Random Forest")
 cowplot::plot_grid(woemp_crf_pdp_head_age, woemp_tm_pdp_head_age, ncol = 2)
 ```
+
+### Transformed Outcome Loss
+
+```{r woemp_tm_transformed_loss, message=FALSE, warning=FALSE, paged.print=FALSE}
+# transformed outcome : 
+main$woemp_index_transformed <- (main$treatment - main$prop_score) / main$prop_score*(1 - main$prop_score) * main$women_emp_index_1
+
+# transformed outcome loss : 
+woemp_tm_transformed_loss <- sum((main$cte - main$woemp_index_transformed)^2) / nrow(main)
+woemp_tm_transformed_loss
+```
+
+```{r woemp_crf_transformed_loss}
+test_Y <- test$women_emp_index_1
+test_X <- test %>% 
+  select(-treatment, -target_index, -areaid, -contains("exp"))
+test_clusters <- test$areaid
+test_W <- test$treatment
+woemp_crf_trans_outcome <- (test_W - 0.5) / 0.5*(1-0.5) * test_Y
+woemp_crf_MSE <- 1 / nrow(test) * sum((woemp_crf_trans_outcome - woemp_crf_pred)^2)
+woemp_crf_MSE
+```
+
 
 ## Models Comparison
 

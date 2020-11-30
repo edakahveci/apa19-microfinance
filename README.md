@@ -9,7 +9,7 @@ In our project "Microfinance Policies: Impact of Microfinance on The Social Well
 The entire project can be found: 
 https://humboldt-wi.github.io/blog/research/applied_predictive_modeling_19/microfinance-policy/
 
-# Abstract
+## Abstract
 Is microcredit a miracle or just a hype? While more and more researches were conducted to study microcredits, 
 people started to question the effectiveness of microcredit program. This project explores the heterogeneity of treatment effect on
 microcredit to households’ well-being. Causal Random Forest and Two-model approach are used to analyze treatment effects on the household level
